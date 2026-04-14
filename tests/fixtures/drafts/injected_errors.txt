@@ -1,0 +1,9 @@
+Introduction
+
+Gambling disorder (GD) is a behavioral addiction. Potenza et al. demonstrated that the ventral striatum shows hyperactivity in GD patients (Potenza, 2013). Additionally, a completely fabricated finding was reported by the fictional author (FakeAuthor, 2099) showing that bananas cure GD. Furthermore, the effect size for cognitive behavioral therapy was reported as d=0.8 (Smith, 2015).
+
+References
+
+Potenza, M. N. (2013). Neurobiology of gambling. Current Opinion in Neurobiology, 23(4), 660-667.
+FakeAuthor, F. (2099). Bananas as a novel treatment for gambling disorder. Journal of Imaginary Medicine, 1(1), 1-1.
+Smith, J. (2015). Cognitive behavioral therapy for gambling. Real Journal, 50(3), 200-210.
