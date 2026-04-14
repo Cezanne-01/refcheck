@@ -12,6 +12,8 @@ from refcheck.extract.linker import check_orphans
 from refcheck.verify.metadata import verify_all_references
 from refcheck.fetch.source_fetcher import fetch_sources
 from refcheck.verify.content import verify_all_content
+from refcheck.verify.agent_metadata import verify_all_references_agent
+from refcheck.verify.agent_content import verify_all_content_agent
 from refcheck.report.aggregator import build_draft_report
 from refcheck.llm.client import LLMClient
 from refcheck.fetch.crossref import CrossrefClient
@@ -23,9 +25,11 @@ from refcheck.ui.progress import ProgressReporter, Stage
 
 
 MODEL_MAP = {
-    "fast":    {"extract": "gpt-5.4-mini", "content": "gpt-5.4"},
-    "precise": {"extract": "gpt-5.4-mini", "content": "gpt-5.4-thinking"},
-    "ultra":   {"extract": "gpt-5.4",      "content": "gpt-5.4-pro"},
+    # 사용자 계정에서 확인된 모델만 기본값으로 사용.
+    # gpt-5.4-thinking / gpt-5.4-pro는 일부 계정에서 접근 불가 — 404 방지를 위해 gpt-5.4로 폴백.
+    "fast":    {"extract": "gpt-5.4-mini", "content": "gpt-5.4-mini"},
+    "precise": {"extract": "gpt-5.4-mini", "content": "gpt-5.4"},
+    "ultra":   {"extract": "gpt-5.4",      "content": "gpt-5.4"},
 }
 
 
@@ -36,6 +40,8 @@ class PipelineConfig:
     concurrency: int = 5
     max_references: int = 200
     warn_references: int = 100
+    use_agents: bool = False
+    agent_max_turns: int = 6
 
 
 async def run_pipeline(
@@ -88,12 +94,24 @@ async def run_pipeline(
     orphan_cits, orphan_refs = check_orphans(citations, references)
 
     reporter.start(Stage.VERIFY_METADATA, total=len(references), message="4개 DB에서 메타데이터 검증")
-    verified = await verify_all_references(
-        references,
-        crossref=crossref, openalex=openalex,
-        semantic_scholar=semantic_scholar, pubmed=pubmed,
-        concurrency=config.concurrency,
-    )
+    if config.use_agents:
+        openai_raw = llm._client  # type: ignore[attr-defined]
+        verified = await verify_all_references_agent(
+            references,
+            openai_client=openai_raw,
+            crossref=crossref, openalex=openalex,
+            semantic_scholar=semantic_scholar, pubmed=pubmed,
+            model=models["content"],
+            max_turns=config.agent_max_turns,
+            concurrency=min(3, config.concurrency),
+        )
+    else:
+        verified = await verify_all_references(
+            references,
+            crossref=crossref, openalex=openalex,
+            semantic_scholar=semantic_scholar, pubmed=pubmed,
+            concurrency=config.concurrency,
+        )
     reporter.finish(Stage.VERIFY_METADATA)
 
     reporter.start(Stage.FETCH_SOURCES, total=len(verified), message="전문·초록 확보")
@@ -105,11 +123,22 @@ async def run_pipeline(
     reporter.finish(Stage.FETCH_SOURCES)
 
     reporter.start(Stage.VERIFY_CONTENT, total=len(citations), message="LLM으로 인용 내용 검증")
-    findings = await verify_all_content(
-        citations, verified, llm=llm,
-        model=models["content"],
-        concurrency=config.concurrency,
-    )
+    if config.use_agents:
+        openai_raw = llm._client  # type: ignore[attr-defined]
+        findings = await verify_all_content_agent(
+            citations, verified,
+            openai_client=openai_raw,
+            unpaywall=unpaywall, openalex=openalex,
+            model=models["content"],
+            max_turns=config.agent_max_turns,
+            concurrency=min(3, config.concurrency),
+        )
+    else:
+        findings = await verify_all_content(
+            citations, verified, llm=llm,
+            model=models["content"],
+            concurrency=config.concurrency,
+        )
     reporter.finish(Stage.VERIFY_CONTENT, message=f"{len(findings)}개 발견사항")
 
     reporter.start(Stage.AGGREGATE, total=1)
