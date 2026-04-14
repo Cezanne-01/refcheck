@@ -1,0 +1,15 @@
+{
+  "status": "ok",
+  "message": {
+    "items": [{
+      "DOI": "10.1016/j.conb.2013.01.020",
+      "title": ["Neurobiology of gambling"],
+      "author": [{"given": "Marc N.", "family": "Potenza"}],
+      "published-print": {"date-parts": [[2013, 8]]},
+      "container-title": ["Current Opinion in Neurobiology"],
+      "volume": "23",
+      "issue": "4",
+      "page": "660-667"
+    }]
+  }
+}
