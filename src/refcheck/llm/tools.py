@@ -364,15 +364,15 @@ class ContentToolDispatcher:
         return {"passages": [m[1][:1500] for m in matches[:3]]}
 
     async def _fetch_abstract(self, doi: str) -> dict[str, Any]:
-        if self._openalex is None:
-            return {"abstract": None, "note": "no openalex client"}
-        try:
-            res = await self._openalex.search(title="", authors=[], year=None)
-            if res and res.abstract:
-                return {"abstract": res.abstract}
-        except Exception as e:
-            return {"abstract": None, "error": str(e)}
-        return {"abstract": None}
+        # Note: OpenAlexClient currently has no DOI-lookup method. The abstract
+        # for this paper is already embedded in the agent's user prompt, so
+        # returning a clear "not implemented" signal avoids misleading the
+        # agent with unrelated search results.
+        return {
+            "abstract": None,
+            "note": "fetch_abstract not implemented in this version; "
+                    "use the abstract provided in the user prompt",
+        }
 
     async def _fetch_full_text(self, doi: str) -> dict[str, Any]:
         if self._unpaywall is None:

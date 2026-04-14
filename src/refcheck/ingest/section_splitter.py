@@ -15,9 +15,28 @@ class SectionSplitError(Exception):
 
 
 def split_body_and_references(text: str) -> tuple[str, str]:
-    """본문과 참고문헌 섹션을 분리. 헤딩은 양쪽 모두에서 제거."""
-    # 헤딩을 단독 줄로 등장 (앞뒤 개행 또는 문서 시작/끝)
-    pattern = r"(?m)^\s*(?:{})\s*:?\s*$".format("|".join(re.escape(h) for h in HEADINGS))
+    """본문과 참고문헌 섹션을 분리. 헤딩은 양쪽 모두에서 제거.
+
+    지원하는 헤딩 형식 (단독 줄, 양끝 whitespace 허용):
+    - `References`
+    - `참고문헌`
+    - `참고문헌 (References)` — 괄호 안 영어 번역 병기
+    - `References (참고문헌)` — 반대 순서도 허용
+    - 숫자 섹션 번호 (`8. References`, `VI. 참고문헌`) 허용
+    - 끝에 콜론 허용 (`References:`)
+    """
+    heading_alt = "|".join(re.escape(h) for h in HEADINGS)
+    # 1) optional 섹션 번호 (e.g. "8.", "VI.", "IX. ")
+    # 2) 헤딩 본체
+    # 3) optional 괄호 안 번역 병기 (e.g. " (References)")
+    # 4) optional trailing colon
+    pattern = (
+        r"(?m)^\s*"
+        r"(?:[IVXLCDM\d]+\s*[.)]\s*)?"  # section number prefix
+        r"(?:" + heading_alt + r")"
+        r"(?:\s*\(\s*(?:" + heading_alt + r")\s*\))?"  # parenthesized alt
+        r"\s*:?\s*$"
+    )
     matches = list(re.finditer(pattern, text, re.IGNORECASE))
 
     if not matches:

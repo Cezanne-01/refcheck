@@ -2,10 +2,32 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from typing import Any, Protocol
+import httpx
+from openai import RateLimitError, APITimeoutError, APIConnectionError
+from tenacity import (
+    retry, stop_after_attempt, wait_exponential, retry_if_exception_type,
+)
 
 
 class _Dispatcher(Protocol):
     async def dispatch(self, name: str, args: dict[str, Any]) -> dict[str, Any]: ...
+
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=15),
+    retry=retry_if_exception_type((
+        RateLimitError,
+        APITimeoutError,
+        APIConnectionError,
+        httpx.TimeoutException,
+        httpx.NetworkError,
+    )),
+    reraise=True,
+)
+async def _create_completion(client, **kwargs):
+    """Wrap chat.completions.create with retry on transient errors."""
+    return await client.chat.completions.create(**kwargs)
 
 
 class AgentTimeoutError(Exception):
@@ -52,7 +74,8 @@ class AgentRunner:
         total_out = 0
 
         for turn in range(1, self._max_turns + 1):
-            resp = await self._client.chat.completions.create(
+            resp = await _create_completion(
+                self._client,
                 model=model,
                 messages=messages,
                 tools=tools,
