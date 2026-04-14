@@ -62,7 +62,9 @@ def _to_result(item: dict[str, Any]) -> OpenAlexResult:
             else:
                 authors.append(Author(family=name))
 
-    venue = item.get("host_venue") or {}
+    # OpenAlex deprecated host_venue in 2023 in favor of primary_location.source
+    primary_location = item.get("primary_location") or {}
+    venue = primary_location.get("source") or item.get("host_venue") or {}
     biblio = item.get("biblio") or {}
     pages = None
     if biblio.get("first_page"):

@@ -2,7 +2,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from typing import Any
-from openai import AsyncOpenAI
+import httpx
+from openai import AsyncOpenAI, APIError, RateLimitError, APITimeoutError, APIConnectionError
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 
@@ -38,7 +39,14 @@ class LLMClient:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
-        retry=retry_if_exception_type(Exception),
+        retry=retry_if_exception_type((
+            RateLimitError,
+            APITimeoutError,
+            APIConnectionError,
+            httpx.TimeoutException,
+            httpx.NetworkError,
+            json.JSONDecodeError,
+        )),
         reraise=True,
     )
     async def complete_json(

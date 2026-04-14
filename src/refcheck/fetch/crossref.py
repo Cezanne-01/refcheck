@@ -20,7 +20,13 @@ class CrossrefClient:
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=5), reraise=True)
     async def lookup_doi(self, doi: str) -> Reference | None:
-        r = await self._client.get(f"{BASE_URL}/{doi}")
+        # Strip URL prefix if user provided full URL DOI
+        normalized = (
+            doi.removeprefix("https://doi.org/")
+            .removeprefix("http://doi.org/")
+            .removeprefix("doi:")
+        )
+        r = await self._client.get(f"{BASE_URL}/{normalized}")
         if r.status_code == 404:
             return None
         r.raise_for_status()

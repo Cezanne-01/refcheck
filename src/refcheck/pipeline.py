@@ -33,6 +33,8 @@ class PipelineConfig:
     cache_dir: Path
     verification_level: Literal["fast", "precise", "ultra"] = "precise"
     concurrency: int = 5
+    max_references: int = 200
+    warn_references: int = 100
 
 
 async def run_pipeline(
@@ -54,6 +56,26 @@ async def run_pipeline(
     body, refs_raw = split_body_and_references(text)
 
     references = await parse_references(refs_raw, llm=llm, model=models["extract"])
+
+    # Reference-count guardrails
+    if len(references) == 0:
+        raise ValueError(
+            "참고문헌이 감지되지 않았습니다. 초안이 참고문헌 섹션을 포함하는지 확인하세요."
+        )
+    if len(references) > config.max_references:
+        raise ValueError(
+            f"참고문헌 수가 제한을 초과했습니다 ({len(references)} > {config.max_references}). "
+            "초안을 분할하거나 --max-references 옵션으로 상한을 조정하세요."
+        )
+    if len(references) > config.warn_references:
+        import warnings
+        warnings.warn(
+            f"참고문헌 수가 많습니다 ({len(references)} > {config.warn_references}). "
+            "검증 시간·비용이 증가할 수 있습니다.",
+            UserWarning,
+            stacklevel=2,
+        )
+
     citations = await extract_citations(body, references, llm=llm, model=models["extract"])
 
     orphan_cits, orphan_refs = check_orphans(citations, references)

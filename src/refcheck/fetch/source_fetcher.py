@@ -37,10 +37,9 @@ async def _fetch_one(
 
     doi = (vref.canonical.doi if vref.canonical else None) or vref.reference.doi
     if not doi:
-        if vref.abstract:
-            vref.access_level = "abstract_only"
-        else:
-            vref.access_level = "paywalled"
+        # DOI가 없으면 Unpaywall 조회 불가. 초록 여부로 access_level 확정.
+        # paywalled는 "DOI는 있지만 돈 내야 전문 열람" 상태이므로 DOI 부재는 not_found가 정확.
+        vref.access_level = "abstract_only" if vref.abstract else "not_found"
         return vref
 
     cache_key = f"fulltext:{doi}"

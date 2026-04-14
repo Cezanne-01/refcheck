@@ -6,7 +6,8 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv
 from refcheck.pipeline import run_pipeline, PipelineConfig
-from refcheck.ingest.pdf_reader import read_pdf
+from refcheck.ingest.pdf_reader import read_pdf, PDFReadError
+from refcheck.ingest.section_splitter import SectionSplitError
 from refcheck.llm.client import LLMClient
 from refcheck.fetch.crossref import CrossrefClient
 from refcheck.fetch.openalex import OpenAlexClient
@@ -29,10 +30,21 @@ def main() -> None:
                         help="API 응답 캐시 디렉토리")
     args = parser.parse_args()
 
-    if args.input.suffix.lower() == ".pdf":
-        draft_text = read_pdf(args.input)
-    else:
-        draft_text = args.input.read_text(encoding="utf-8")
+    if not args.input.exists():
+        print(f"ERROR: 입력 파일을 찾을 수 없습니다: {args.input}", file=sys.stderr)
+        sys.exit(2)
+
+    try:
+        if args.input.suffix.lower() == ".pdf":
+            draft_text = read_pdf(args.input)
+        else:
+            draft_text = args.input.read_text(encoding="utf-8")
+    except PDFReadError as e:
+        print(f"ERROR: PDF 읽기 실패 — {e}", file=sys.stderr)
+        sys.exit(3)
+    except UnicodeDecodeError as e:
+        print(f"ERROR: 텍스트 파일 인코딩 문제 (UTF-8이어야 합니다) — {e}", file=sys.stderr)
+        sys.exit(3)
 
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
@@ -74,7 +86,15 @@ def main() -> None:
             await unpaywall.close()
         return report
 
-    report = asyncio.run(_run())
+    try:
+        report = asyncio.run(_run())
+    except SectionSplitError as e:
+        print(f"ERROR: 참고문헌 섹션 분리 실패 — {e}", file=sys.stderr)
+        sys.exit(4)
+    except ValueError as e:
+        # e.g. reference-count guard from pipeline
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(5)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     json_path = args.output.with_suffix(".json")

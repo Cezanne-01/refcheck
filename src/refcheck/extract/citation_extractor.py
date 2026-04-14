@@ -1,5 +1,4 @@
 from __future__ import annotations
-import json
 from pathlib import Path
 from refcheck.schema.models import Citation, Reference
 from refcheck.llm.client import LLMClient
