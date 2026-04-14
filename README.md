@@ -42,3 +42,29 @@ pytest -m slow              # 실 API 호출 포함
 이 도구는 **보조 도구**입니다. 모든 판정은 LLM·API 출력이며 오판 가능성이 있습니다.
 특히 🟡 (인용 내용 불일치), 🟢 (맥락 약함), ⚪ (초록 기반), ❓ (확인 불가), 🔒 (접근 불가)
 항목은 최종 사용자 확인이 필수입니다.
+
+## Streamlit UI
+
+CLI 외에도 웹 UI로 실행할 수 있습니다.
+
+### 시스템 요구사항 (macOS)
+
+PDF 다운로드에는 weasyprint가 필요하며, 다음 시스템 라이브러리를 먼저 설치해야 합니다:
+
+``` bash
+brew install cairo pango gdk-pixbuf libffi
+```
+
+### 실행
+
+``` bash
+streamlit run src/refcheck/ui/app.py
+```
+
+브라우저에서 http://localhost:8501 접속.
+
+- 초안 PDF·TXT 업로드
+- 검증 레벨 선택 (fast / precise / ultra)
+- 실시간 단계별 진행 바
+- 심각도별 접힌 Finding 목록 + side-by-side 근거 비교
+- JSON / Markdown / HTML / PDF 리포트 다운로드
