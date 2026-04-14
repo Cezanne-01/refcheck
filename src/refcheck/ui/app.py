@@ -55,6 +55,9 @@ def main() -> None:
         st.divider()
         render_report(st.session_state.report, st=st)
 
+        # 5. Download buttons
+        _render_download_buttons(st.session_state.report)
+
 
 def _run_pipeline_with_progress(upload: Any, config: Any) -> None:
     """Pipeline을 동기적으로 실행하며 st.status로 진행 상황 표시."""
@@ -119,6 +122,61 @@ async def _execute_pipeline(upload: Any, config: Any, reporter: ProgressReporter
         await pubmed.close()
         await unpaywall.close()
     return report
+
+
+def _render_download_buttons(report: DraftReport) -> None:
+    from refcheck.report.json_exporter import export_json
+    from refcheck.report.markdown_exporter import export_markdown
+    from refcheck.report.html_exporter import export_html
+
+    st.subheader("📥 리포트 다운로드")
+    cols = st.columns(4)
+
+    base = Path(report.metadata.draft_title).stem or "report"
+
+    cols[0].download_button(
+        "JSON",
+        data=export_json(report),
+        file_name=f"{base}.refcheck.json",
+        mime="application/json",
+        use_container_width=True,
+    )
+    cols[1].download_button(
+        "Markdown",
+        data=export_markdown(report),
+        file_name=f"{base}.refcheck.md",
+        mime="text/markdown",
+        use_container_width=True,
+    )
+    cols[2].download_button(
+        "HTML",
+        data=export_html(report),
+        file_name=f"{base}.refcheck.html",
+        mime="text/html",
+        use_container_width=True,
+    )
+
+    pdf_bytes = _try_export_pdf(report)
+    if pdf_bytes is not None:
+        cols[3].download_button(
+            "PDF",
+            data=pdf_bytes,
+            file_name=f"{base}.refcheck.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+        )
+    else:
+        with cols[3]:
+            st.button("PDF (사용 불가)", disabled=True, use_container_width=True,
+                      help="weasyprint 시스템 deps 설치 필요: brew install cairo pango gdk-pixbuf libffi")
+
+
+def _try_export_pdf(report: DraftReport) -> bytes | None:
+    from refcheck.report.pdf_exporter import export_pdf, PDFExportError
+    try:
+        return export_pdf(report)
+    except PDFExportError:
+        return None
 
 
 if __name__ == "__main__":
