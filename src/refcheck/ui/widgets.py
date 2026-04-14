@@ -15,6 +15,7 @@ class UploadResult:
 class RunConfig:
     verification_level: str
     cache_dir: Path
+    use_agents: bool = False
 
 
 def render_upload(st: Any) -> UploadResult | None:
@@ -73,7 +74,19 @@ def render_config(st: Any) -> RunConfig:
         value="./.cache",
         help="API 응답·전문 PDF 캐시 위치. 재실행 시 속도 향상.",
     )
-    return RunConfig(verification_level=level, cache_dir=Path(cache_dir_str))
+    use_agents = st.checkbox(
+        "🤖 에이전트 모드 (정밀도 우선, 비용 2~3배)",
+        value=False,
+        help=(
+            "LLM이 스스로 검색 전략을 조정하고 재시도합니다. "
+            "false positive 크게 감소. 45개 참고문헌 기준 $15~30, 8~15분 소요."
+        ),
+    )
+    return RunConfig(
+        verification_level=level,
+        cache_dir=Path(cache_dir_str),
+        use_agents=use_agents,
+    )
 
 
 def check_env_readiness(st: Any) -> bool:

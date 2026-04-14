@@ -85,8 +85,16 @@ def _run_pipeline_with_progress(upload: Any, config: Any) -> None:
             status.update(label="❌ 검증 실패", state="error")
             st.error(str(e))
         except Exception as e:
+            from refcheck.ingest.section_splitter import SectionSplitError
             status.update(label="❌ 검증 실패", state="error")
-            st.exception(e)
+            if isinstance(e, SectionSplitError):
+                st.error(f"{e}")
+                st.info(
+                    "팁: 참고문헌 섹션 헤딩을 단독 줄로 두세요. "
+                    "예: `참고문헌`, `References`, `참고문헌 (References)`, `8. References` 등이 지원됩니다."
+                )
+            else:
+                st.exception(e)
 
 
 async def _execute_pipeline(upload: Any, config: Any, reporter: ProgressReporter) -> DraftReport:
@@ -107,6 +115,7 @@ async def _execute_pipeline(upload: Any, config: Any, reporter: ProgressReporter
             config=PipelineConfig(
                 cache_dir=config.cache_dir,
                 verification_level=config.verification_level,
+                use_agents=config.use_agents,
             ),
             llm=llm,
             crossref=crossref,
