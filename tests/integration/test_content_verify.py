@@ -112,3 +112,28 @@ async def test_low_confidence_after_two_failed_evidence_validations():
     assert finding is not None
     assert finding.confidence == "low"
     assert finding.source_evidence_quote is None
+
+
+@pytest.mark.asyncio
+async def test_verify_all_content_parallel():
+    from refcheck.verify.content import verify_all_content
+
+    cit1 = _cit()
+    cit2 = Citation(
+        id="cit_002", surface="(X, 2020)", ref_ids=["ref_001"],
+        char_offset=100, containing_sentence="Good citation.",
+        surrounding_paragraph="Good citation.",
+    )
+
+    mock_llm = MagicMock(spec=LLMClient)
+    mock_llm.complete_json = AsyncMock(return_value=(
+        {"category": "none", "error_type": None, "severity": 1,
+         "confidence": "high", "source_evidence_quote": "",
+         "explanation": "ok", "suggestion": None},
+        LLMUsage(model="gpt-5.4-thinking", prompt_tokens=100, completion_tokens=20, cost_usd=0.001),
+    ))
+
+    findings = await verify_all_content(
+        [cit1, cit2], [_vref_with_abstract()], llm=mock_llm, concurrency=2,
+    )
+    assert findings == []  # 둘 다 category=none

@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 from pathlib import Path
 from refcheck.schema.models import Citation, VerifiedReference, Finding
 from refcheck.llm.client import LLMClient
@@ -94,3 +95,31 @@ def _ref_summary(vref: VerifiedReference) -> str:
     r = vref.canonical or vref.reference
     authors = ", ".join(a.family for a in r.authors)
     return f"{authors} ({r.year}). {r.title}. {r.journal or ''}"
+
+
+async def verify_all_content(
+    citations: list[Citation],
+    verified_refs: list[VerifiedReference],
+    *,
+    llm: LLMClient,
+    model: str = "gpt-5.4-thinking",
+    concurrency: int = 5,
+) -> list[Finding]:
+    """모든 citation을 병렬로 검증. 각 citation이 여러 ref를 가리키면 각 ref별로 finding 생성."""
+    vref_by_id = {v.reference.id: v for v in verified_refs}
+    sem = asyncio.Semaphore(concurrency)
+
+    async def _worker(cit: Citation, ref_id: str) -> Finding | None:
+        vref = vref_by_id.get(ref_id)
+        if vref is None:
+            return None
+        async with sem:
+            return await verify_citation(cit, vref, llm=llm, model=model)
+
+    tasks = []
+    for cit in citations:
+        for ref_id in cit.ref_ids:
+            tasks.append(_worker(cit, ref_id))
+
+    results = await asyncio.gather(*tasks)
+    return [f for f in results if f is not None]
