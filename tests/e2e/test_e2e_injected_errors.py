@@ -144,6 +144,9 @@ async def test_detects_hallucination_and_content_mismatch(tmp_path):
     assert len(content) == 1, f"Expected 1 content_mismatch, got {len(content)}"
     assert content[0].error_type == "number_distortion"
 
-    # 3. Potenza → no finding
+    # 3. Potenza → no serious finding; only partial_verified informational (abstract_only access)
     potenza_findings = [f for f in report.findings if f.reference_id == "ref_001"]
-    assert potenza_findings == [], f"Expected no Potenza findings, got {potenza_findings}"
+    potenza_serious = [f for f in potenza_findings if f.category != "partial_verified"]
+    assert potenza_serious == [], f"Expected no serious Potenza findings, got {potenza_serious}"
+    potenza_partial = [f for f in potenza_findings if f.category == "partial_verified"]
+    assert len(potenza_partial) == 1, f"Expected 1 partial_verified for Potenza, got {len(potenza_partial)}"

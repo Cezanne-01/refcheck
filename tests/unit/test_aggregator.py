@@ -82,3 +82,78 @@ def test_unverifiable_added_to_manual_review():
     )
     assert "r1" in report.unverified_manual_review
     assert "r2" not in report.unverified_manual_review
+
+
+def test_preprint_vs_published_emits_informational_finding():
+    """저자·제목 일치하는데 연도 1년 차이 → preprint_vs_published, severity 1."""
+    r = _ref("r1")
+    vref = VerifiedReference(
+        reference=r,
+        status="metadata_error",
+        canonical=r,
+        field_diffs={"year": ("2012", "2013")},
+        access_level="not_found",
+        preprint_vs_published=True,
+    )
+    citations = [Citation(id="c1", surface="(X, 2012)", ref_ids=["r1"],
+                          char_offset=0, containing_sentence="Claim (X, 2012).",
+                          surrounding_paragraph="Claim (X, 2012).")]
+    report = build_draft_report(
+        verified_refs=[vref], content_findings=[], citations=citations,
+        orphan_citations=[], orphan_references=[],
+        metadata=ReportMetadata(draft_title="t", processing_seconds=1.0,
+                                total_usd_cost=0.1, verification_level="precise"),
+    )
+    preprint_findings = [f for f in report.findings if f.error_type == "preprint_vs_published"]
+    assert len(preprint_findings) == 1
+    assert preprint_findings[0].severity == 1
+    # field_mismatch가 동시에 emit되면 안 됨
+    field_findings = [f for f in report.findings if f.error_type == "field_mismatch"]
+    assert field_findings == []
+
+
+def test_partial_verified_finding_for_abstract_only():
+    """abstract_only 접근 수준은 informational partial_verified finding 생성."""
+    vref = _vref("verified", "r1", access="abstract_only")
+    citations = [Citation(id="c1", surface="(X, 2020)", ref_ids=["r1"],
+                          char_offset=0, containing_sentence="...",
+                          surrounding_paragraph="...")]
+    report = build_draft_report(
+        verified_refs=[vref], content_findings=[], citations=citations,
+        orphan_citations=[], orphan_references=[],
+        metadata=ReportMetadata(draft_title="t", processing_seconds=1.0,
+                                total_usd_cost=0.1, verification_level="precise"),
+    )
+    partial = [f for f in report.findings if f.category == "partial_verified"]
+    assert len(partial) == 1
+    assert partial[0].severity == 1
+    assert partial[0].confidence == "low"
+
+
+def test_no_partial_verified_for_full_text():
+    """full_text 접근 가능하면 partial_verified finding 없음."""
+    vref = _vref("verified", "r1", access="full_text")
+    citations = [Citation(id="c1", surface="(X, 2020)", ref_ids=["r1"],
+                          char_offset=0, containing_sentence="...",
+                          surrounding_paragraph="...")]
+    report = build_draft_report(
+        verified_refs=[vref], content_findings=[], citations=citations,
+        orphan_citations=[], orphan_references=[],
+        metadata=ReportMetadata(draft_title="t", processing_seconds=1.0,
+                                total_usd_cost=0.1, verification_level="precise"),
+    )
+    partial = [f for f in report.findings if f.category == "partial_verified"]
+    assert partial == []
+
+
+def test_orphan_reference_emits_finding():
+    """본문에서 인용되지 않은 참고문헌은 citation_unmatched finding 생성."""
+    report = build_draft_report(
+        verified_refs=[], content_findings=[], citations=[],
+        orphan_citations=[], orphan_references=["ref_unused"],
+        metadata=ReportMetadata(draft_title="t", processing_seconds=1.0,
+                                total_usd_cost=0.1, verification_level="precise"),
+    )
+    orphan = [f for f in report.findings if f.error_type == "orphan_reference"]
+    assert len(orphan) == 1
+    assert orphan[0].reference_id == "ref_unused"

@@ -45,19 +45,74 @@ def build_draft_report(
         elif vref.status == "metadata_error":
             for cit in related_cits or [_dummy_cit(rid)]:
                 diff_str = ", ".join(f"{k}: '{v[0]}' → '{v[1]}'" for k, v in vref.field_diffs.items())
+                if vref.preprint_vs_published:
+                    # 저자·제목 일치하는데 연도 1년 차이 → preprint/published 구분 (informational)
+                    findings.append(Finding(
+                        id=f"find_preprint_{cit.id}",
+                        citation_id=cit.id,
+                        reference_id=rid,
+                        category="metadata",
+                        error_type="preprint_vs_published",
+                        severity=1,
+                        confidence="high",
+                        draft_claim_quote=cit.containing_sentence,
+                        source_evidence_quote=None,
+                        explanation=(
+                            f"원본 저자·제목과 일치하나 인용 연도가 1년 차이 ({diff_str}). "
+                            "일반적으로 preprint vs 공식 출판 연도 혼동. 공식 출판 연도 사용 권장."
+                        ),
+                        suggestion="공식 출판 연도로 교체.",
+                    ))
+                else:
+                    findings.append(Finding(
+                        id=f"find_meta_{cit.id}",
+                        citation_id=cit.id,
+                        reference_id=rid,
+                        category="metadata",
+                        error_type="field_mismatch",
+                        severity=3,
+                        confidence="high",
+                        draft_claim_quote=cit.containing_sentence,
+                        source_evidence_quote=None,
+                        explanation=f"메타데이터 불일치: {diff_str}",
+                        suggestion="정확한 메타데이터로 교체.",
+                    ))
+
+        # ⚪ partial_verified: 초록만으로 검증된 경우 informational finding
+        if vref.status in ("verified", "metadata_error") and vref.access_level == "abstract_only":
+            for cit in related_cits or [_dummy_cit(rid)]:
                 findings.append(Finding(
-                    id=f"find_meta_{cit.id}",
+                    id=f"find_partial_{cit.id}",
                     citation_id=cit.id,
                     reference_id=rid,
-                    category="metadata",
-                    error_type="field_mismatch",
-                    severity=3,
-                    confidence="high",
+                    category="partial_verified",
+                    error_type="abstract_only",
+                    severity=1,
+                    confidence="low",
                     draft_claim_quote=cit.containing_sentence,
                     source_evidence_quote=None,
-                    explanation=f"메타데이터 불일치: {diff_str}",
-                    suggestion="정확한 메타데이터로 교체.",
+                    explanation=(
+                        "원문 전문 접근 불가. 초록만으로 내용 검증됨. "
+                        "주장이 논문 주 결론이 아닌 경우 초록에서 확인 어려울 수 있음 — 수동 확인 권장."
+                    ),
+                    suggestion="중요한 인용이면 원문 전문 직접 확인.",
                 ))
+
+    # 본문에서 인용되지 않은 참고문헌 (고아 reference)
+    for ref_id in orphan_references:
+        findings.append(Finding(
+            id=f"find_orphan_ref_{ref_id}",
+            citation_id="",
+            reference_id=ref_id,
+            category="citation_unmatched",
+            error_type="orphan_reference",
+            severity=2,
+            confidence="high",
+            draft_claim_quote="",
+            source_evidence_quote=None,
+            explanation="참고문헌 목록에 존재하나 본문 어디서도 인용되지 않음.",
+            suggestion="본문에서 인용 추가 또는 참고문헌 목록에서 삭제.",
+        ))
 
     for cit_id in orphan_citations:
         findings.append(Finding(

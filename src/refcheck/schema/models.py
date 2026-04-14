@@ -44,6 +44,7 @@ class VerifiedReference(BaseModel):
     abstract: str | None = None
     full_text: str | None = None
     sources_checked: list[str] = Field(default_factory=list)
+    preprint_vs_published: bool = False
 
 
 class Finding(BaseModel):
