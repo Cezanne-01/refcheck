@@ -33,7 +33,10 @@ SUBMIT_METADATA_FINAL: dict[str, Any] = {
         "name": "submit_final",
         "description": (
             "Call this ONCE when you have made your verification verdict. "
-            "This terminates the reasoning loop."
+            "This terminates the reasoning loop. "
+            "For `canonical`, include keys: title, authors (list of {given, family}), "
+            "year, doi, journal, volume, issue, pages. Use null for fields you don't know. "
+            "For `field_diffs`, use a list of objects each with keys: field, user_value, canonical_value."
         ),
         "strict": True,
         "parameters": {
@@ -52,14 +55,50 @@ SUBMIT_METADATA_FINAL: dict[str, Any] = {
                     "description": "Why you reached this verdict (2-3 sentences)",
                 },
                 "canonical": {
-                    "type": ["object", "null"],
-                    "description": "Canonical paper metadata from best-matching DB, or null if hallucination",
-                    "additionalProperties": True,
+                    "anyOf": [
+                        {"type": "null"},
+                        {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "required": ["title", "authors", "year", "doi",
+                                         "journal", "volume", "issue", "pages"],
+                            "properties": {
+                                "title": {"type": ["string", "null"]},
+                                "authors": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "additionalProperties": False,
+                                        "required": ["given", "family"],
+                                        "properties": {
+                                            "given": {"type": ["string", "null"]},
+                                            "family": {"type": "string"},
+                                        },
+                                    },
+                                },
+                                "year": {"type": ["integer", "null"]},
+                                "doi": {"type": ["string", "null"]},
+                                "journal": {"type": ["string", "null"]},
+                                "volume": {"type": ["string", "null"]},
+                                "issue": {"type": ["string", "null"]},
+                                "pages": {"type": ["string", "null"]},
+                            },
+                        },
+                    ],
                 },
                 "field_diffs": {
-                    "type": "object",
+                    "type": "array",
                     "description": "Fields where user ref differs from canonical",
-                    "additionalProperties": {"type": "array", "items": {"type": ["string", "null"]}},
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["field", "user_value", "canonical_value"],
+                        "properties": {
+                            "field": {"type": "string"},
+                            "user_value": {"type": ["string", "null"]},
+                            "canonical_value": {"type": ["string", "null"]},
+                        },
+                    },
                 },
                 "abstract": {
                     "type": ["string", "null"],

@@ -97,9 +97,20 @@ async def verify_reference_agent(
                 sources.append(name)
 
     field_diffs: dict[str, tuple[str | None, str | None]] = {}
-    for k, v in (args.get("field_diffs") or {}).items():
-        if isinstance(v, list) and len(v) == 2:
-            field_diffs[k] = (v[0], v[1])
+    diffs_raw = args.get("field_diffs") or []
+    if isinstance(diffs_raw, list):
+        # Strict-compliant schema: list of {field, user_value, canonical_value}
+        for item in diffs_raw:
+            if isinstance(item, dict) and "field" in item:
+                field_diffs[item["field"]] = (
+                    item.get("user_value"),
+                    item.get("canonical_value"),
+                )
+    elif isinstance(diffs_raw, dict):
+        # Legacy schema (if any agent emits old format)
+        for k, v in diffs_raw.items():
+            if isinstance(v, list) and len(v) == 2:
+                field_diffs[k] = (v[0], v[1])
 
     abstract = args.get("abstract")
     oa_url = args.get("oa_pdf_url")
