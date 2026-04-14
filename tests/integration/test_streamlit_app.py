@@ -33,3 +33,23 @@ def test_app_shows_verification_level_selector():
     at.run()
     # selectbox가 최소 1개 있어야 함 (verification level)
     assert len(at.selectbox) >= 1
+
+
+def test_try_export_pdf_returns_none_when_exporter_fails(monkeypatch):
+    """weasyprint 미설치 등으로 export_pdf가 PDFExportError를 raise하면 None 반환 — UI graceful degradation."""
+    from refcheck.report.pdf_exporter import PDFExportError
+    from refcheck.ui import app as app_module
+
+    def _boom(_report):
+        raise PDFExportError("weasyprint not available")
+
+    monkeypatch.setattr("refcheck.report.pdf_exporter.export_pdf", _boom)
+
+    from refcheck.schema.models import DraftReport, ReportMetadata
+    report = DraftReport(
+        metadata=ReportMetadata(draft_title="t", processing_seconds=1.0,
+                                total_usd_cost=0.1, verification_level="precise"),
+        summary_counts={}, findings=[], references=[], unverified_manual_review=[],
+    )
+    result = app_module._try_export_pdf(report)
+    assert result is None

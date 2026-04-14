@@ -90,10 +90,11 @@ def _run_pipeline_with_progress(upload: Any, config: Any) -> None:
 
 
 async def _execute_pipeline(upload: Any, config: Any, reporter: ProgressReporter) -> DraftReport:
-    unpaywall_email = os.getenv("UNPAYWALL_EMAIL") or "refcheck@example.com"
+    unpaywall_email = os.getenv("UNPAYWALL_EMAIL")
 
     llm = LLMClient(api_key=os.getenv("OPENAI_API_KEY"))
-    crossref = CrossrefClient(user_agent=f"refcheck/0.1 (mailto:{unpaywall_email})")
+    ua_suffix = f" (mailto:{unpaywall_email})" if unpaywall_email else ""
+    crossref = CrossrefClient(user_agent=f"refcheck/0.1{ua_suffix}")
     openalex = OpenAlexClient(mailto=unpaywall_email)
     semantic = SemanticScholarClient(api_key=os.getenv("SEMANTIC_SCHOLAR_API_KEY") or None)
     pubmed = PubMedClient()

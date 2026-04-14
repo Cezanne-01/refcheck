@@ -54,10 +54,10 @@ def main() -> None:
     unpaywall_email = os.getenv("UNPAYWALL_EMAIL")
     if not unpaywall_email:
         print("WARN: UNPAYWALL_EMAIL 미설정. OA PDF 자동 다운로드 스킵됨.", file=sys.stderr)
-        unpaywall_email = "refcheck@example.com"
 
     llm = LLMClient(api_key=api_key)
-    crossref = CrossrefClient(user_agent=f"refcheck/0.1 (mailto:{unpaywall_email})")
+    ua_suffix = f" (mailto:{unpaywall_email})" if unpaywall_email else ""
+    crossref = CrossrefClient(user_agent=f"refcheck/0.1{ua_suffix}")
     openalex = OpenAlexClient(mailto=unpaywall_email)
     semantic = SemanticScholarClient(api_key=os.getenv("SEMANTIC_SCHOLAR_API_KEY") or None)
     pubmed = PubMedClient()

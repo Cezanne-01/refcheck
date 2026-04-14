@@ -31,3 +31,17 @@ async def test_returns_none_when_not_oa():
     url = await client.oa_pdf_url("10.1016/paywalled")
     assert url is None
     await client.close()
+
+
+@pytest.mark.asyncio
+async def test_none_email_skips_api_call():
+    """email=None이면 API 호출 없이 바로 None 반환 (ToS 준수)."""
+    import respx
+    with respx.mock:
+        # Any HTTP to unpaywall.org is an error — it should never be called
+        route = respx.get(host="api.unpaywall.org")
+        client = UnpaywallClient(email=None)
+        url = await client.oa_pdf_url("10.1016/whatever")
+        assert url is None
+        assert not route.called
+        await client.close()
