@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>참고문헌 검증 리포트 — {{ report.metadata.draft_title }}</title>
+<style>
+  body { font-family: -apple-system, "Apple SD Gothic Neo", sans-serif; max-width: 900px; margin: 2em auto; padding: 0 1em; color: #222; line-height: 1.5; }
+  h1 { border-bottom: 2px solid #333; padding-bottom: 0.3em; }
+  .banner { background: #fff3cd; border-left: 4px solid #ff9800; padding: 1em; margin: 1em 0; }
+  .metadata { color: #666; font-size: 0.9em; margin-bottom: 1.5em; }
+  .metadata span { margin-right: 1em; }
+  .summary { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.8em; margin: 1em 0; }
+  .summary-cell { border: 1px solid #ddd; border-radius: 4px; padding: 0.6em 0.8em; }
+  .summary-cell .count { font-size: 1.6em; font-weight: 600; }
+  .summary-cell .label { color: #777; font-size: 0.85em; }
+  .finding { border: 1px solid #ddd; border-radius: 6px; margin: 1em 0; padding: 1em 1.2em; page-break-inside: avoid; }
+  .finding-header { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid #eee; padding-bottom: 0.5em; margin-bottom: 0.6em; }
+  .finding-header .category { font-weight: 600; font-size: 1.1em; }
+  .finding-meta { color: #888; font-size: 0.85em; }
+  .severity { letter-spacing: 2px; color: #c73e3e; }
+  .confidence { color: #666; }
+  blockquote { border-left: 3px solid #ccc; padding-left: 1em; margin: 0.5em 0; color: #444; }
+  .evidence-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 1em; }
+  @media (max-width: 700px) { .evidence-pair { grid-template-columns: 1fr; } }
+  .evidence-pair h4 { margin: 0 0 0.3em; font-size: 0.9em; color: #555; text-transform: uppercase; letter-spacing: 0.05em; }
+  .suggestion { background: #e8f5e9; padding: 0.6em 0.8em; border-radius: 4px; margin-top: 0.6em; }
+  .cat-hallucination { border-left: 6px solid #c62828; }
+  .cat-metadata { border-left: 6px solid #ef6c00; }
+  .cat-content_mismatch { border-left: 6px solid #f9a825; }
+  .cat-weak_context { border-left: 6px solid #558b2f; }
+  .cat-partial_verified { border-left: 6px solid #9e9e9e; }
+  .cat-paywalled { border-left: 6px solid #455a64; }
+  .cat-unverifiable { border-left: 6px solid #6a1b9a; }
+  .cat-citation_unmatched { border-left: 6px solid #0277bd; }
+</style>
+</head>
+<body>
+  <h1>참고문헌 검증 리포트</h1>
+  <div class="metadata">
+    <span><b>문서:</b> {{ report.metadata.draft_title }}</span>
+    <span><b>처리 시간:</b> {{ "%.1f"|format(report.metadata.processing_seconds) }}초</span>
+    <span><b>비용:</b> ${{ "%.3f"|format(report.metadata.total_usd_cost) }}</span>
+    <span><b>검증 레벨:</b> {{ report.metadata.verification_level }}</span>
+  </div>
+
+  <div class="banner">
+    <b>⚠️ 이 리포트는 보조 도구입니다.</b>
+    모든 판정은 LLM·API 출력이며 오판 가능성이 있습니다.
+    🟡/🟢/⚪/❓/🔒 항목은 최종 사용자 확인이 필수입니다.
+  </div>
+
+  <h2>요약</h2>
+  <div class="summary">
+    {% for k, v in report.summary_counts.items() %}
+      <div class="summary-cell">
+        <div class="count">{{ v }}</div>
+        <div class="label">{{ k }}</div>
+      </div>
+    {% endfor %}
+  </div>
+
+  {% if report.unverified_manual_review %}
+    <h2>수동 확인 권장</h2>
+    <ul>
+    {% for rid in report.unverified_manual_review %}
+      <li>{{ rid }}</li>
+    {% endfor %}
+    </ul>
+  {% endif %}
+
+  <h2>발견된 문제 ({{ report.findings|length }}건)</h2>
+  {% if not report.findings %}
+    <p>문제 없음. ✅</p>
+  {% endif %}
+  {% for f in report.findings %}
+    <div class="finding cat-{{ f.category }}">
+      <div class="finding-header">
+        <span class="category">{{ category_label(f.category) }}
+          {% if f.error_type %} — {{ f.error_type }}{% endif %}
+        </span>
+        <span class="finding-meta">
+          <span class="severity">{% for _ in range(f.severity) %}●{% endfor %}{% for _ in range(5 - f.severity) %}○{% endfor %}</span>
+          <span class="confidence">신뢰도: {{ f.confidence }}</span>
+        </span>
+      </div>
+      <div class="evidence-pair">
+        <div>
+          <h4>초안 인용</h4>
+          <blockquote>{{ f.draft_claim_quote }}</blockquote>
+        </div>
+        {% if f.source_evidence_quote %}
+        <div>
+          <h4>원문 근거</h4>
+          <blockquote>{{ f.source_evidence_quote }}</blockquote>
+        </div>
+        {% endif %}
+      </div>
+      <p>{{ f.explanation }}</p>
+      {% if f.suggestion %}
+        <div class="suggestion">💡 <b>제안:</b> {{ f.suggestion }}</div>
+      {% endif %}
+    </div>
+  {% endfor %}
+</body>
+</html>
