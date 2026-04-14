@@ -19,6 +19,7 @@ from refcheck.fetch.openalex import OpenAlexClient
 from refcheck.fetch.semantic_scholar import SemanticScholarClient
 from refcheck.fetch.pubmed import PubMedClient
 from refcheck.fetch.unpaywall import UnpaywallClient
+from refcheck.ui.progress import ProgressReporter, Stage
 
 
 MODEL_MAP = {
@@ -48,16 +49,20 @@ async def run_pipeline(
     semantic_scholar: SemanticScholarClient,
     pubmed: PubMedClient,
     unpaywall: UnpaywallClient,
+    progress: ProgressReporter | None = None,
 ) -> DraftReport:
     start = time.time()
     models = MODEL_MAP[config.verification_level]
+    reporter = progress or ProgressReporter()  # no-op if absent
 
+    reporter.start(Stage.INGEST, total=1, message="본문 정규화")
     text = normalize_text(draft_text)
     body, refs_raw = split_body_and_references(text)
+    reporter.finish(Stage.INGEST)
 
+    reporter.start(Stage.EXTRACT, total=2, message="참고문헌·인용 추출")
     references = await parse_references(refs_raw, llm=llm, model=models["extract"])
 
-    # Reference-count guardrails
     if len(references) == 0:
         raise ValueError(
             "참고문헌이 감지되지 않았습니다. 초안이 참고문헌 섹션을 포함하는지 확인하세요."
@@ -76,29 +81,38 @@ async def run_pipeline(
             stacklevel=2,
         )
 
+    reporter.update(Stage.EXTRACT, current=1, message=f"{len(references)}개 참고문헌 파싱됨")
     citations = await extract_citations(body, references, llm=llm, model=models["extract"])
+    reporter.finish(Stage.EXTRACT, message=f"{len(citations)}개 인용 추출됨")
 
     orphan_cits, orphan_refs = check_orphans(citations, references)
 
+    reporter.start(Stage.VERIFY_METADATA, total=len(references), message="4개 DB에서 메타데이터 검증")
     verified = await verify_all_references(
         references,
         crossref=crossref, openalex=openalex,
         semantic_scholar=semantic_scholar, pubmed=pubmed,
         concurrency=config.concurrency,
     )
+    reporter.finish(Stage.VERIFY_METADATA)
 
+    reporter.start(Stage.FETCH_SOURCES, total=len(verified), message="전문·초록 확보")
     verified = await fetch_sources(
         verified, unpaywall=unpaywall,
         cache_dir=config.cache_dir,
         concurrency=config.concurrency,
     )
+    reporter.finish(Stage.FETCH_SOURCES)
 
+    reporter.start(Stage.VERIFY_CONTENT, total=len(citations), message="LLM으로 인용 내용 검증")
     findings = await verify_all_content(
         citations, verified, llm=llm,
         model=models["content"],
         concurrency=config.concurrency,
     )
+    reporter.finish(Stage.VERIFY_CONTENT, message=f"{len(findings)}개 발견사항")
 
+    reporter.start(Stage.AGGREGATE, total=1)
     elapsed = time.time() - start
     metadata = ReportMetadata(
         draft_title=draft_title,
@@ -106,7 +120,7 @@ async def run_pipeline(
         total_usd_cost=llm.total_cost_usd,
         verification_level=config.verification_level,
     )
-    return build_draft_report(
+    report = build_draft_report(
         verified_refs=verified,
         content_findings=findings,
         citations=citations,
@@ -114,3 +128,5 @@ async def run_pipeline(
         orphan_references=orphan_refs,
         metadata=metadata,
     )
+    reporter.finish(Stage.AGGREGATE)
+    return report
