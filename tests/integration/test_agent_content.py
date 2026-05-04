@@ -72,7 +72,7 @@ async def test_agent_returns_none_when_claim_supported():
     finding = await verify_citation_agent(
         cit, vref,
         openai_client=openai,
-        unpaywall=MagicMock(), openalex=MagicMock(),
+        full_text_fetcher=None,
     )
     assert finding is None
 
@@ -99,7 +99,7 @@ async def test_agent_abstract_insufficient_over_complete_mismatch():
     finding = await verify_citation_agent(
         cit, vref,
         openai_client=openai,
-        unpaywall=MagicMock(), openalex=MagicMock(),
+        full_text_fetcher=None,
     )
     assert finding is not None
     assert finding.category == "partial_verified"

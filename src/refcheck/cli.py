@@ -14,6 +14,8 @@ from refcheck.fetch.openalex import OpenAlexClient
 from refcheck.fetch.semantic_scholar import SemanticScholarClient
 from refcheck.fetch.pubmed import PubMedClient
 from refcheck.fetch.unpaywall import UnpaywallClient
+from refcheck.fetch.web_search import WebSearchClient
+from refcheck.fetch.full_text import FullTextFetcher
 from refcheck.report.json_exporter import export_json
 from refcheck.report.markdown_exporter import export_markdown
 
@@ -62,6 +64,8 @@ def main() -> None:
     semantic = SemanticScholarClient(api_key=os.getenv("SEMANTIC_SCHOLAR_API_KEY") or None)
     pubmed = PubMedClient()
     unpaywall = UnpaywallClient(email=unpaywall_email)
+    web_search = WebSearchClient()
+    full_text_fetcher = FullTextFetcher(unpaywall=unpaywall)
 
     config = PipelineConfig(cache_dir=args.cache_dir, verification_level=args.level)
 
@@ -76,7 +80,8 @@ def main() -> None:
                 openalex=openalex,
                 semantic_scholar=semantic,
                 pubmed=pubmed,
-                unpaywall=unpaywall,
+                web_search=web_search,
+                full_text_fetcher=full_text_fetcher,
             )
         finally:
             await crossref.close()
@@ -84,6 +89,8 @@ def main() -> None:
             await semantic.close()
             await pubmed.close()
             await unpaywall.close()
+            await web_search.close()
+            await full_text_fetcher.close()
         return report
 
     try:

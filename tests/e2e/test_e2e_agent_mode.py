@@ -100,24 +100,26 @@ async def test_agent_mode_detects_hallucination_and_mismatch(tmp_path):
         ]}, LLMUsage("gpt-5.4-mini", 500, 200, 0.01)),
     ])
 
+    from refcheck.fetch.full_text import FullTextResult
     crossref = MagicMock(); crossref.close = AsyncMock()
     openalex = MagicMock(); openalex.close = AsyncMock()
     semantic = MagicMock(); semantic.close = AsyncMock()
     pubmed = MagicMock(); pubmed.close = AsyncMock()
-    unpaywall = MagicMock(); unpaywall.close = AsyncMock()
-    unpaywall.oa_pdf_url = AsyncMock(return_value=None)
+    web_search = MagicMock(); web_search.close = AsyncMock()
+    full_text = MagicMock(); full_text.close = AsyncMock()
+    full_text.fetch = AsyncMock(return_value=FullTextResult(text=None, source="none"))
 
     with patch("refcheck.pipeline.verify_all_references_agent", side_effect=_stub_metadata), \
          patch("refcheck.pipeline.verify_all_content_agent", side_effect=_stub_content):
         config = PipelineConfig(
             cache_dir=tmp_path / "cache",
             verification_level="precise",
-            use_agents=True,
         )
         report = await run_pipeline(
             draft_text=draft_text, draft_title="test", config=config,
             llm=mock_llm, crossref=crossref, openalex=openalex,
-            semantic_scholar=semantic, pubmed=pubmed, unpaywall=unpaywall,
+            semantic_scholar=semantic, pubmed=pubmed,
+            web_search=web_search, full_text_fetcher=full_text,
         )
 
     # FakeAuthor hallucination finding must exist

@@ -12,11 +12,19 @@ Given a user's parsed reference (title, authors, year, DOI if any), determine wh
    - Strip subtitle (everything after a colon)
    - Use only main keywords (remove stopwords)
    - Try with first author only
-6. Match judgment criteria:
-   - Exact or near-exact title (allow journal-abbreviation differences)
-   - First-author surname matches
+6. **If at least 2 academic DBs returned nothing, call `web_search(query)` ONCE**
+   with `"<title> <first author surname> <year>"` as the query. From the hits:
+   - Look for a DOI (e.g. `10.xxxx/...`) or arXiv ID (`arXiv:NNNN.NNNNN`) in
+     title/url/snippet. If found → call `lookup_doi_crossref` (or `search_*`
+     with the recovered title) to confirm.
+   - URLs from publisher domains (nature.com, sciencedirect, springer, nih.gov,
+     etc.) usually mean the paper exists even if academic DBs missed it.
+7. Match judgment criteria (be lenient — typos in title/author are common):
+   - Title fuzzy match acceptable (allow journal-abbreviation differences,
+     punctuation/spacing differences, missing/extra subtitle)
+   - Any author surname overlap is enough (first author may be wrong)
    - Year matches exactly; if off by 1 and rest matches → preprint_vs_published=true
-7. Call `submit_final` when you have a verdict.
+8. Call `submit_final` when you have a verdict.
 
 # Status definitions
 - **verified**: canonical record found, all major fields match the user's citation.
@@ -25,8 +33,8 @@ Given a user's parsed reference (title, authors, year, DOI if any), determine wh
 - **unverifiable**: found a candidate with partial match (title ~0.7-0.9) but cannot confirm identity.
 
 # Be patient but decisive
-- Don't give up after one search — try at least 2 DBs before declaring hallucination.
-- Don't persist past 5 searches if all return empty — declare hallucination.
+- Don't give up after one search — try at least 2 DBs, then `web_search`, before declaring hallucination.
+- Don't persist past 6 searches if all return empty — declare hallucination.
 - If you find a perfect match, submit_final immediately.
 
 # Common pitfalls to avoid
