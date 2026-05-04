@@ -45,9 +45,21 @@ def test_html_includes_limitation_banner():
 
 
 def test_html_escapes_user_content():
+    """User-supplied strings (e.g. citation text containing HTML) must be
+    autoescaped by Jinja before rendering — never raw <script> tags."""
+    from refcheck.schema.models import VerifiedReference, Reference, Author
+    ref = Reference(
+        id="r1", authors=[Author(family="X")], year=2020,
+        title="<script>alert('xss')</script>", raw_text="raw",
+        style_detected="APA",
+    )
+    vref = VerifiedReference(
+        reference=ref, status="hallucination", canonical=None,
+        access_level="not_found",
+    )
     f = Finding(
         id="f1", citation_id="c1", reference_id="r1",
-        category="hallucination", error_type=None,
+        category="content_mismatch", error_type="wrong_paper",
         severity=3, confidence="high",
         draft_claim_quote="<script>alert('xss')</script>",
         source_evidence_quote=None,
@@ -59,7 +71,7 @@ def test_html_escapes_user_content():
             draft_title="t", processing_seconds=1.0,
             total_usd_cost=0.1, verification_level="precise",
         ),
-        summary_counts={}, findings=[f], references=[], unverified_manual_review=[],
+        summary_counts={}, findings=[f], references=[vref], unverified_manual_review=[],
     )
     html = export_html(report)
     assert "<script>alert" not in html

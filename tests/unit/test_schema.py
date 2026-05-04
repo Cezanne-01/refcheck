@@ -39,6 +39,38 @@ def test_finding_severity_range():
         )
 
 
+def test_verified_reference_diff_severities_default_empty():
+    """diff_severities should default to {} when not provided."""
+    ref = Reference(
+        id="r1", authors=[Author(family="X")], year=2020,
+        title="T", raw_text="raw", style_detected="APA",
+    )
+    vref = VerifiedReference(reference=ref, status="verified")
+    assert vref.diff_severities == {}
+
+
+def test_verified_reference_diff_severities_validates_enum():
+    """diff_severities values must be one of the four allowed levels."""
+    import pytest
+    ref = Reference(
+        id="r1", authors=[Author(family="X")], year=2020,
+        title="T", raw_text="raw", style_detected="APA",
+    )
+    # Valid
+    vref = VerifiedReference(
+        reference=ref, status="metadata_error",
+        field_diffs={"year": ("2019", "2020")},
+        diff_severities={"year": "info"},
+    )
+    assert vref.diff_severities["year"] == "info"
+    # Invalid value
+    with pytest.raises(ValueError):
+        VerifiedReference(
+            reference=ref, status="metadata_error",
+            diff_severities={"year": "nonsense"},  # type: ignore[dict-item]
+        )
+
+
 def test_draft_report_summary_counts():
     report = DraftReport(
         metadata=ReportMetadata(

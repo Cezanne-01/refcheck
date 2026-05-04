@@ -73,3 +73,24 @@ def test_numbered_section_korean():
     text = "본문.\n\n8. 참고문헌\n\nSmith (2020)."
     body, refs = split_body_and_references(text)
     assert "Smith (2020)" in refs
+
+
+def test_singular_reference_heading():
+    """'Reference' (단수형) 도 허용."""
+    text = "Body.\n\nReference\n\nSmith (2020)."
+    body, refs = split_body_and_references(text)
+    assert "Smith (2020)" in refs
+
+
+def test_korean_reference_variant_참고자료():
+    """'참고자료' 변형도 허용."""
+    text = "본문.\n\n참고자료\n\nSmith (2020)."
+    body, refs = split_body_and_references(text)
+    assert "Smith (2020)" in refs
+
+
+def test_works_cited():
+    """'Works Cited' (MLA 스타일)."""
+    text = "Body.\n\nWorks Cited\n\nSmith (2020)."
+    body, refs = split_body_and_references(text)
+    assert "Smith (2020)" in refs
