@@ -5,8 +5,7 @@ from typing import Any
 from refcheck.schema.models import Citation, VerifiedReference, Finding
 from refcheck.llm.agent import AgentRunner, AgentTimeoutError
 from refcheck.llm.tools import CONTENT_TOOLS, ContentToolDispatcher
-from refcheck.fetch.openalex import OpenAlexClient
-from refcheck.fetch.unpaywall import UnpaywallClient
+from refcheck.fetch.full_text import FullTextFetcher
 
 
 _PROMPT_PATH = Path(__file__).parent.parent / "llm" / "prompts" / "content_agent.md"
@@ -39,8 +38,7 @@ async def verify_citation_agent(
     verified_ref: VerifiedReference,
     *,
     openai_client: Any,
-    unpaywall: UnpaywallClient,
-    openalex: OpenAlexClient,
+    full_text_fetcher: FullTextFetcher | None = None,
     model: str = "gpt-5.4",
     max_turns: int = 5,
 ) -> Finding | None:
@@ -66,8 +64,7 @@ async def verify_citation_agent(
 
     dispatcher = ContentToolDispatcher(
         source_text=source_text,
-        openalex=openalex,
-        unpaywall=unpaywall,
+        full_text_fetcher=full_text_fetcher,
     )
     runner = AgentRunner(openai_client=openai_client, max_turns=max_turns)
     system = _PROMPT_PATH.read_text(encoding="utf-8")
@@ -121,8 +118,7 @@ async def verify_all_content_agent(
     verified_refs: list[VerifiedReference],
     *,
     openai_client: Any,
-    unpaywall: UnpaywallClient,
-    openalex: OpenAlexClient,
+    full_text_fetcher: FullTextFetcher | None = None,
     model: str = "gpt-5.4",
     max_turns: int = 5,
     concurrency: int = 3,
@@ -138,7 +134,7 @@ async def verify_all_content_agent(
             return await verify_citation_agent(
                 cit, vref,
                 openai_client=openai_client,
-                unpaywall=unpaywall, openalex=openalex,
+                full_text_fetcher=full_text_fetcher,
                 model=model, max_turns=max_turns,
             )
 

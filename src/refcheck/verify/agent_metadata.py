@@ -9,6 +9,7 @@ from refcheck.fetch.crossref import CrossrefClient
 from refcheck.fetch.openalex import OpenAlexClient
 from refcheck.fetch.semantic_scholar import SemanticScholarClient
 from refcheck.fetch.pubmed import PubMedClient
+from refcheck.fetch.web_search import WebSearchClient
 
 
 _PROMPT_PATH = Path(__file__).parent.parent / "llm" / "prompts" / "metadata_agent.md"
@@ -58,6 +59,7 @@ async def verify_reference_agent(
     openalex: OpenAlexClient,
     semantic_scholar: SemanticScholarClient,
     pubmed: PubMedClient,
+    web_search: WebSearchClient | None = None,
     model: str = "gpt-5.4",
     max_turns: int = 6,
 ) -> VerifiedReference:
@@ -65,6 +67,7 @@ async def verify_reference_agent(
     dispatcher = MetadataToolDispatcher(
         crossref=crossref, openalex=openalex,
         semantic_scholar=semantic_scholar, pubmed=pubmed,
+        web_search=web_search,
     )
     runner = AgentRunner(openai_client=openai_client, max_turns=max_turns)
     system = _PROMPT_PATH.read_text(encoding="utf-8")
@@ -136,6 +139,7 @@ async def verify_all_references_agent(
     openalex: OpenAlexClient,
     semantic_scholar: SemanticScholarClient,
     pubmed: PubMedClient,
+    web_search: WebSearchClient | None = None,
     model: str = "gpt-5.4",
     max_turns: int = 6,
     concurrency: int = 3,
@@ -148,6 +152,7 @@ async def verify_all_references_agent(
                 r, openai_client=openai_client,
                 crossref=crossref, openalex=openalex,
                 semantic_scholar=semantic_scholar, pubmed=pubmed,
+                web_search=web_search,
                 model=model, max_turns=max_turns,
             )
 

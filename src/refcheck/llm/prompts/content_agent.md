@@ -12,11 +12,16 @@ If the source text is an abstract only and you cannot find direct evidence for t
 # Strategy
 1. First read the provided source text.
 2. Use `find_passage(query)` with 2-3 keyword queries derived from the claim to check for supporting text.
-3. If source is abstract-only and unclear, you may optionally try `fetch_full_text(doi)` — but this often returns "not available". Don't depend on it.
+3. **If source is abstract-only and the abstract doesn't clearly support or
+   contradict the claim, call `fetch_full_text(doi, title)`.** This downloads
+   the paper from arXiv/Europe PMC/Unpaywall and replaces the source_text
+   with the full body. After it returns successfully, call `find_passage`
+   again with relevant keywords to search the body. Only fall back to
+   `abstract_insufficient` if `fetch_full_text` also fails.
 4. Classify into one of these categories:
    - `content_mismatch`: strong evidence of claim being wrong (claim reversal, number distortion, causal/correlation confusion, etc.)
    - `weak_context`: paper mentions the topic but citation is weak (old study where later work contradicts; animal study used for human claim; etc.)
-   - `abstract_insufficient`: can't confirm or deny from abstract; full text needed.
+   - `abstract_insufficient`: full text was unavailable AND abstract was inconclusive.
    - `none`: claim is supported (or at least not contradicted) by source.
 
 # Severity scale
