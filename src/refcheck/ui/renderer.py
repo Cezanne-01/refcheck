@@ -116,12 +116,24 @@ def _render_reference_cards(report: DraftReport, *, st: Any) -> None:
         ),
     )
 
+    # A ref is a "real problem" if its status is non-verified OR it has at
+    # least one substantive finding (severity ≥ 3). Info-only findings like
+    # partial_verified (verified-via-abstract-only) and orphan_reference
+    # don't count — they're advisory, not errors.
+    def _has_real_problem(v: VerifiedReference, findings: list[Finding]) -> bool:
+        if v.status in ("hallucination", "metadata_error", "unverifiable"):
+            return True
+        return any(f.severity >= 3 for f in findings)
+
     n_problem_refs = sum(
         1 for v in refs_sorted
-        if v.status != "verified" or findings_by_ref.get(v.reference.id)
+        if _has_real_problem(v, findings_by_ref.get(v.reference.id, []))
     )
     st.subheader(f"참고문헌별 검증 결과 ({n_problem_refs}/{len(refs_sorted)} 문제 있음)")
-    st.caption("문제가 있는 항목부터 위에 표시됩니다.")
+    st.caption(
+        "문제가 있는 항목부터 위에 표시됩니다. "
+        "(전문 미확보 같은 정보성 항목은 카운트에서 제외)"
+    )
 
     for idx, vref in enumerate(refs_sorted, start=1):
         _render_card(idx, vref, findings_by_ref.get(vref.reference.id, []), st=st)
@@ -163,12 +175,24 @@ def _render_card(
     if user_ref.raw_text:
         st.caption(f"원문 그대로: _{user_ref.raw_text.strip()[:300]}_")
 
-    # Diff table
+    # Diff table — but for `unverifiable` status, the canonical may be a
+    # *different* paper that just happens to share the first author. Frame
+    # it as a candidate the user should review, not as authoritative.
     if vref.field_diffs and canonical is not None:
+        if vref.status == "unverifiable":
+            st.caption(
+                "⚠️ 아래는 검색에서 가장 가까운 후보지만 실제 인용한 논문이 아닐 수 있습니다. "
+                "같은 저자의 다른 논문일 가능성이 있어 직접 확인이 필요합니다."
+            )
         _render_diff_table(vref, st=st)
 
     # Content findings (deduped already by aggregator). Cap at 2 visible.
-    all_content = [f for f in findings if f.category == "content_mismatch"]
+    # Skip for unverifiable refs — the content agent ran against a candidate
+    # that may not be the user's actual cited paper, so the verdict is unreliable.
+    all_content = (
+        [] if vref.status == "unverifiable"
+        else [f for f in findings if f.category == "content_mismatch"]
+    )
     visible_content = all_content[:2]
     extra_count = len(all_content) - len(visible_content)
     if visible_content:

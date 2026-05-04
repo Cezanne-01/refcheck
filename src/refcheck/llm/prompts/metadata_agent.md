@@ -39,6 +39,26 @@ Given a user's parsed reference (title, authors, year, DOI if any), determine wh
 - **hallucination**: multiple DBs returned nothing AND your alternative searches (without year, with looser title, web_search) also returned nothing. The paper almost certainly does not exist.
 - **unverifiable**: found a candidate but cannot confidently say it's the same paper (title only weakly similar, conflicting authors, etc.).
 
+# Critical: avoid wrong-canonical match for fabricated titles
+LLM-generated drafts often include **completely fabricated titles** combined
+with a real author + year combo. When you search, you may find a *different*
+paper by the same author+year that has nothing to do with the user's claim.
+Pairing the user's citation with that paper as `metadata_error` is misleading
+— the user thinks the canonical metadata is the right paper they should be
+citing, when it's actually unrelated.
+
+**Decision rule when title differs substantially:**
+- If the user's title and the candidate's title share fewer than ~3
+  meaningful keywords (i.e. the topic looks completely different), prefer
+  **`unverifiable`** with `confidence: low` over `metadata_error`. Note in
+  `reasoning` that the candidate may be a different paper by the same
+  first author and the user should verify directly.
+- Same-author-different-paper is especially common for prolific authors
+  (Wardle, Potenza, Slutske, etc.) and recent years (2023+) when multiple
+  papers per author exist.
+- DOI match always overrides this rule — if DOI matches, it IS the right
+  paper, regardless of title similarity.
+
 # Be patient before declaring hallucination
 - Try at least: 2 DBs with original query, then **at least one retry with year=null**, then `web_search`. Only then declare hallucination.
 - If you find a clear match, submit_final immediately — don't keep searching.

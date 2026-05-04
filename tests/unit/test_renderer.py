@@ -173,3 +173,120 @@ def test_orphan_findings_rendered_separately():
 
     md_text = " ".join(str(c) for c in st.markdown.call_args_list)
     assert "고아" in md_text or "매칭" in md_text or "orphan" in md_text.lower()
+
+
+# ---------------------------------------------------------------------------
+# "문제 있음" count semantics — info-level findings should NOT count
+# ---------------------------------------------------------------------------
+
+def test_problem_count_excludes_partial_verified_findings():
+    """A verified ref with only a partial_verified (severity=1) finding is
+    NOT a problem. The header should say 0 problem out of N refs."""
+    st = _make_st()
+    refs = [
+        _vref(reference=_ref("r1", "P1", 2020), status="verified",
+              access_level="abstract_only"),
+        _vref(reference=_ref("r2", "P2", 2020), status="verified",
+              access_level="abstract_only"),
+    ]
+    info_findings = [
+        Finding(
+            id=f"info{i}", citation_id=f"c{i}", reference_id=f"r{i+1}",
+            category="partial_verified", error_type="abstract_only",
+            severity=1, confidence="low",
+            draft_claim_quote="x", source_evidence_quote=None,
+            explanation="abstract only", suggestion=None,
+        )
+        for i in range(2)
+    ]
+    report = DraftReport(
+        metadata=_meta(), summary_counts={},
+        findings=info_findings, references=refs, unverified_manual_review=[],
+    )
+    render_report(report, st=st)
+    subheader_text = " ".join(str(c) for c in st.subheader.call_args_list)
+    assert "0/2" in subheader_text
+
+
+def test_problem_count_includes_metadata_error_status():
+    st = _make_st()
+    ref_canon = _ref("r1", "P1", 2020)
+    refs = [
+        _vref(
+            reference=ref_canon, status="metadata_error", canonical=ref_canon,
+            field_diffs={"year": ("2019", "2020")},
+            diff_severities={"year": "info"},
+        ),
+    ]
+    report = DraftReport(
+        metadata=_meta(), summary_counts={},
+        findings=[], references=refs, unverified_manual_review=[],
+    )
+    render_report(report, st=st)
+    subheader_text = " ".join(str(c) for c in st.subheader.call_args_list)
+    assert "1/1" in subheader_text
+
+
+def test_problem_count_includes_severe_content_finding_on_verified():
+    """A verified ref with a severity-≥3 content_mismatch IS a problem."""
+    st = _make_st()
+    refs = [_vref(reference=_ref("r1", "P1", 2020), status="verified",
+                  access_level="full_text")]
+    findings = [
+        Finding(
+            id="cf1", citation_id="c1", reference_id="r1",
+            category="content_mismatch", error_type="claim_reversal",
+            severity=4, confidence="high",
+            draft_claim_quote="x", source_evidence_quote="y",
+            explanation="reversed", suggestion="fix",
+        ),
+    ]
+    report = DraftReport(
+        metadata=_meta(), summary_counts={},
+        findings=findings, references=refs, unverified_manual_review=[],
+    )
+    render_report(report, st=st)
+    subheader_text = " ".join(str(c) for c in st.subheader.call_args_list)
+    assert "1/1" in subheader_text
+
+
+def test_unverifiable_ref_skips_content_findings_and_warns():
+    """For unverifiable refs, content findings are hidden (run on possibly
+    wrong canonical) and a warning is shown above the diff table."""
+    st = _make_st()
+    user_ref = _ref("r1", "Made-up title for Wardle 2024", 2024)
+    canon = Reference(
+        id="canonical", authors=[Author(family="Wardle")], year=2024,
+        title="Some other Wardle paper from 2024",
+        raw_text="", style_detected="unknown",
+    )
+    refs = [
+        _vref(
+            reference=user_ref, status="unverifiable", canonical=canon,
+            field_diffs={"title": ("Made-up title for Wardle 2024",
+                                   "Some other Wardle paper from 2024")},
+            diff_severities={"title": "major"},
+        ),
+    ]
+    findings = [
+        Finding(
+            id="cf1", citation_id="c1", reference_id="r1",
+            category="content_mismatch", error_type="wrong_paper",
+            severity=5, confidence="high",
+            draft_claim_quote="x", source_evidence_quote="y",
+            explanation="wrong", suggestion="fix",
+        ),
+    ]
+    report = DraftReport(
+        metadata=_meta(), summary_counts={},
+        findings=findings, references=refs, unverified_manual_review=[],
+    )
+    render_report(report, st=st)
+
+    caption_text = " ".join(str(c) for c in st.caption.call_args_list)
+    md_text = " ".join(str(c) for c in st.markdown.call_args_list)
+    # Warning about candidate-not-authoritative is rendered
+    assert "후보" in (caption_text + md_text) or "직접 확인" in (caption_text + md_text)
+    # Content finding is NOT rendered (no expander for content findings)
+    expander_calls = [str(c) for c in st.expander.call_args_list]
+    assert not any("인용 내용 검증" in c for c in expander_calls)

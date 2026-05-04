@@ -11,6 +11,7 @@ from refcheck.fetch.semantic_scholar import SemanticScholarClient
 from refcheck.fetch.pubmed import PubMedClient
 from refcheck.fetch.web_search import WebSearchClient
 from refcheck.verify.matching import compare_metadata
+from refcheck._match import title_similarity
 
 
 _PROMPT_PATH = Path(__file__).parent.parent / "llm" / "prompts" / "metadata_agent.md"
@@ -130,6 +131,22 @@ async def verify_reference_agent(
     status = args.get("status", "unverifiable")
     if status == "metadata_error" and canonical is not None and not field_diffs:
         status = "verified"
+
+    # Wrong-canonical guard: when the agent paired the user's citation with
+    # a paper whose title is wildly different AND no DOI was confirmed,
+    # downgrade to `unverifiable`. This is the LLM-fabricated-title scenario
+    # (e.g. user writes a fake title for Wardle 2024; agent finds another
+    # Wardle 2024 paper that's unrelated). Calling that "metadata_error"
+    # implies the user just had wrong details about the right paper, which
+    # is misleading.
+    if (
+        status == "metadata_error"
+        and canonical is not None
+        and not (ref.doi and canonical.doi and ref.doi.lower() == canonical.doi.lower())
+    ):
+        sim = title_similarity(ref.title or "", canonical.title or "")
+        if sim < 0.45:
+            status = "unverifiable"
 
     return VerifiedReference(
         reference=ref,
