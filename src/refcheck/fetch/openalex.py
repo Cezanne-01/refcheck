@@ -4,9 +4,12 @@ from typing import Any
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 from refcheck.schema.models import Reference, Author
+from refcheck._match import title_similarity, surname_overlap
 
 
 BASE_URL = "https://api.openalex.org/works"
+
+_MIN_SIMILARITY = 0.40
 
 
 @dataclass
@@ -36,18 +39,63 @@ class OpenAlexClient:
         authors: list[Author],
         year: int | None,
     ) -> OpenAlexResult | None:
+        """Search OpenAlex by title + first author.
+
+        ``year`` is no longer used as a strict filter; we pass title+author
+        as a free-text search and rank candidates by title similarity.
+        """
         query_parts = [title]
         if authors:
             query_parts.append(authors[0].family)
         params = {"search": " ".join(query_parts), "per-page": "5"}
-        if year:
-            params["filter"] = f"publication_year:{year}"
         r = await self._client.get(BASE_URL, params=params)
         r.raise_for_status()
-        results = r.json().get("results", [])
+        results = r.json().get("results", []) or []
         if not results:
             return None
-        return _to_result(results[0])
+        best = _best_match(
+            results, query_title=title, query_authors=authors, query_year=year,
+        )
+        return _to_result(best) if best else None
+
+
+def _best_match(
+    items: list[dict[str, Any]],
+    *,
+    query_title: str,
+    query_authors: list[Author],
+    query_year: int | None,
+) -> dict[str, Any] | None:
+    query_surnames = [a.family for a in query_authors if a.family]
+    scored = []
+    for it in items:
+        cand_title = it.get("title") or ""
+        sim = title_similarity(query_title, cand_title)
+        cand_surnames: list[str] = []
+        for ah in it.get("authorships") or []:
+            name = (ah.get("author") or {}).get("display_name", "")
+            if name:
+                parts = name.rsplit(" ", 1)
+                cand_surnames.append(parts[1] if len(parts) == 2 else name)
+        author_ok = (
+            not query_surnames
+            or surname_overlap(query_surnames, cand_surnames)
+        )
+        if not author_ok:
+            sim *= 0.5
+        cand_year = it.get("publication_year")
+        year_bonus = 0.0
+        if query_year and cand_year:
+            diff = abs(query_year - cand_year)
+            if diff == 0:
+                year_bonus = 0.05
+            elif diff == 1:
+                year_bonus = 0.02
+        scored.append((sim + year_bonus, it))
+    scored.sort(key=lambda x: -x[0])
+    if not scored or scored[0][0] < _MIN_SIMILARITY:
+        return None
+    return scored[0][1]
 
 
 def _to_result(item: dict[str, Any]) -> OpenAlexResult:
@@ -62,7 +110,6 @@ def _to_result(item: dict[str, Any]) -> OpenAlexResult:
             else:
                 authors.append(Author(family=name))
 
-    # OpenAlex deprecated host_venue in 2023 in favor of primary_location.source
     primary_location = item.get("primary_location") or {}
     venue = primary_location.get("source") or item.get("host_venue") or {}
     biblio = item.get("biblio") or {}

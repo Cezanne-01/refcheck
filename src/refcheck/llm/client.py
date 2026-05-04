@@ -33,7 +33,9 @@ class LLMClient:
     """OpenAI client wrapper with retry, JSON schema enforcement, cost tracking."""
 
     def __init__(self, openai_client: AsyncOpenAI | None = None, api_key: str | None = None):
-        self._client = openai_client or AsyncOpenAI(api_key=api_key)
+        # SDK 기본 timeout이 600초라 호출 한 번이 죽지 않고 10분간 매달릴 수 있다.
+        # 단일 호출 상한을 120초로 좁히고 retry는 위 데코레이터에서 처리.
+        self._client = openai_client or AsyncOpenAI(api_key=api_key, timeout=120.0)
         self.total_usage: list[LLMUsage] = []
 
     @retry(

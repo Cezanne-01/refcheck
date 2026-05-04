@@ -3,10 +3,11 @@ import re
 
 
 HEADINGS = [
-    "References", "REFERENCES",
+    "References", "REFERENCES", "Reference", "REFERENCE",
     "Bibliography", "BIBLIOGRAPHY",
-    "참고문헌", "참고 문헌", "인용문헌",
-    "문헌", "Literature Cited",
+    "Works Cited", "WORKS CITED",
+    "Literature Cited", "LITERATURE CITED",
+    "참고문헌", "참고 문헌", "참고자료", "참고 자료", "인용문헌", "문헌",
 ]
 
 

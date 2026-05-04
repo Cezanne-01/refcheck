@@ -142,47 +142,32 @@ async def _execute_pipeline(upload: Any, config: Any, reporter: ProgressReporter
 
 def _render_download_buttons(report: DraftReport) -> None:
     from refcheck.report.json_exporter import export_json
-    from refcheck.report.markdown_exporter import export_markdown
-    from refcheck.report.html_exporter import export_html
 
     st.subheader("📥 리포트 다운로드")
-    cols = st.columns(4)
+    cols = st.columns(2)
 
     base = Path(report.metadata.draft_title).stem or "report"
 
     cols[0].download_button(
-        "JSON",
+        "JSON (구조화 데이터)",
         data=export_json(report),
         file_name=f"{base}.refcheck.json",
         mime="application/json",
         use_container_width=True,
     )
-    cols[1].download_button(
-        "Markdown",
-        data=export_markdown(report),
-        file_name=f"{base}.refcheck.md",
-        mime="text/markdown",
-        use_container_width=True,
-    )
-    cols[2].download_button(
-        "HTML",
-        data=export_html(report),
-        file_name=f"{base}.refcheck.html",
-        mime="text/html",
-        use_container_width=True,
-    )
 
     pdf_bytes = _try_export_pdf(report)
     if pdf_bytes is not None:
-        cols[3].download_button(
-            "PDF",
+        cols[1].download_button(
+            "PDF (가독성 좋은 리포트)",
             data=pdf_bytes,
             file_name=f"{base}.refcheck.pdf",
             mime="application/pdf",
             use_container_width=True,
+            type="primary",
         )
     else:
-        with cols[3]:
+        with cols[1]:
             st.button("PDF (사용 불가)", disabled=True, use_container_width=True,
                       help="weasyprint 시스템 deps 설치 필요: brew install cairo pango gdk-pixbuf libffi")
 

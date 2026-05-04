@@ -7,6 +7,14 @@ from refcheck.fetch.full_text import FullTextFetcher
 from refcheck.ingest.text_normalizer import normalize_text
 
 
+# Bump this whenever full-text fetcher behavior changes in a way that makes
+# previously-cached results unreliable. v1 cached the arXiv-first results
+# (which wrongly attached unrelated preprints to medical papers); v2 uses
+# EuropePMC-first with title-similarity validation, so v1 entries must be
+# ignored.
+_CACHE_VERSION = "v2"
+
+
 async def fetch_sources(
     verified: list[VerifiedReference],
     *,
@@ -37,7 +45,7 @@ async def _fetch_one(
     title = canon.title or vref.reference.title or ""
     year = canon.year or vref.reference.year
 
-    cache_key = f"fulltext:{doi or title}"
+    cache_key = f"fulltext_{_CACHE_VERSION}:{doi or title}"
     cached = cache.get(cache_key)
     if cached and cached.get("text"):
         vref.full_text = cached["text"]

@@ -9,3 +9,7 @@ build/
 .env
 .cache/
 htmlcov/
+
+# Editor/agent workspaces
+.claude/
+.playwright-mcp/

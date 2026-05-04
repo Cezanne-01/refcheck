@@ -10,6 +10,7 @@ from refcheck.fetch.openalex import OpenAlexClient
 from refcheck.fetch.semantic_scholar import SemanticScholarClient
 from refcheck.fetch.pubmed import PubMedClient
 from refcheck.fetch.web_search import WebSearchClient
+from refcheck.verify.matching import compare_metadata
 
 
 _PROMPT_PATH = Path(__file__).parent.parent / "llm" / "prompts" / "metadata_agent.md"
@@ -99,35 +100,47 @@ async def verify_reference_agent(
             if name not in sources:
                 sources.append(name)
 
+    # Field diffs are computed deterministically from (ref, canonical) using
+    # compare_metadata so the report is independent of how the agent chose to
+    # phrase its diffs. The agent's reported diffs are kept only as a fallback
+    # if no canonical was returned.
     field_diffs: dict[str, tuple[str | None, str | None]] = {}
-    diffs_raw = args.get("field_diffs") or []
-    if isinstance(diffs_raw, list):
-        # Strict-compliant schema: list of {field, user_value, canonical_value}
-        for item in diffs_raw:
-            if isinstance(item, dict) and "field" in item:
-                field_diffs[item["field"]] = (
-                    item.get("user_value"),
-                    item.get("canonical_value"),
-                )
-    elif isinstance(diffs_raw, dict):
-        # Legacy schema (if any agent emits old format)
-        for k, v in diffs_raw.items():
-            if isinstance(v, list) and len(v) == 2:
-                field_diffs[k] = (v[0], v[1])
+    diff_severities: dict[str, str] = {}
+    preprint_flag = bool(args.get("preprint_vs_published", False))
+    if canonical is not None:
+        match_result = compare_metadata(ref, canonical)
+        field_diffs = match_result.field_diffs
+        diff_severities = dict(match_result.diff_severities)
+        preprint_flag = preprint_flag or match_result.preprint_vs_published
+    else:
+        diffs_raw = args.get("field_diffs") or []
+        if isinstance(diffs_raw, list):
+            for item in diffs_raw:
+                if isinstance(item, dict) and "field" in item:
+                    field_diffs[item["field"]] = (
+                        item.get("user_value"),
+                        item.get("canonical_value"),
+                    )
 
     abstract = args.get("abstract")
-    oa_url = args.get("oa_pdf_url")
     access_level: str = "abstract_only" if abstract else "not_found"
+
+    # If the agent claimed metadata_error but compare_metadata found nothing
+    # worth flagging (only nuisance-level differences), downgrade to verified.
+    status = args.get("status", "unverifiable")
+    if status == "metadata_error" and canonical is not None and not field_diffs:
+        status = "verified"
 
     return VerifiedReference(
         reference=ref,
-        status=args.get("status", "unverifiable"),
+        status=status,
         canonical=canonical,
         field_diffs=field_diffs,
+        diff_severities=diff_severities,  # type: ignore[arg-type]
         access_level=access_level,  # type: ignore[arg-type]
         abstract=abstract,
         sources_checked=sources,
-        preprint_vs_published=bool(args.get("preprint_vs_published", False)),
+        preprint_vs_published=preprint_flag,
     )
 
 

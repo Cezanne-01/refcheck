@@ -66,6 +66,7 @@ async def parse_references(
         system=system,
         user=raw_refs_text,
         response_schema=REFERENCE_SCHEMA,
+        temperature=0.0,
     )
 
     refs: list[Reference] = []

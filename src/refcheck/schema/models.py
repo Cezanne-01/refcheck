@@ -40,6 +40,11 @@ class VerifiedReference(BaseModel):
     status: Literal["verified", "hallucination", "metadata_error", "unverifiable"]
     canonical: Reference | None = None
     field_diffs: dict[str, tuple[str | None, str | None]] = Field(default_factory=dict)
+    # Per-field severity classification: critical / major / minor / info.
+    # Used by the renderer to color-code rows in the diff table.
+    diff_severities: dict[str, Literal["critical", "major", "minor", "info"]] = Field(
+        default_factory=dict
+    )
     access_level: Literal["full_text", "abstract_only", "paywalled", "not_found"] = "not_found"
     abstract: str | None = None
     full_text: str | None = None

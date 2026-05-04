@@ -1,224 +1,319 @@
+"""Streamlit renderer for the verification report.
+
+Layout: one card per reference. Card contents in priority order:
+  1. Status banner (verified / metadata error / hallucination / unverifiable)
+  2. One-line summary of what is wrong (if anything)
+  3. Side-by-side diff table when canonical metadata exists
+  4. Up to 2 deduped content findings with the actual evidence
+The goal is "what should the writer do?" not "every difference my code can detect".
+"""
 from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 from refcheck.schema.models import DraftReport, Finding, VerifiedReference
 
 
-CATEGORY_LABELS = {
-    "hallucination": "🔴 환각 의심",
-    "metadata": "🟠 메타데이터 오류",
-    "content_mismatch": "🟡 인용 내용 불일치",
-    "weak_context": "🟢 맥락 약함",
-    "partial_verified": "⚪ 부분 검증",
-    "paywalled": "🔒 접근 불가",
-    "unverifiable": "❓ 확인 불가",
-    "citation_unmatched": "⚠️ 고아 인용",
+# Status → human label and color (used in the card banner)
+_STATUS_DISPLAY: dict[str, tuple[str, str]] = {
+    "verified":         ("✅ 검증됨",         "#2e7d32"),
+    "metadata_error":   ("🟠 메타데이터 오류", "#ef6c00"),
+    "hallucination":    ("🔴 환각 의심",      "#c62828"),
+    "unverifiable":     ("❓ 확인 불가",      "#6a1b9a"),
 }
 
-SEVERITY_LABEL = {5: "Critical", 4: "Major", 3: "Moderate", 2: "Minor", 1: "Info"}
-
-STATUS_ICON = {
-    "verified": "✅",
-    "hallucination": "🔴",
-    "metadata_error": "🟠",
-    "unverifiable": "❓",
+_SEVERITY_COLOR: dict[str, str] = {
+    "critical": "#c62828",
+    "major":    "#ef6c00",
+    "minor":    "#9e9e9e",
+    "info":     "#1976d2",
 }
 
-ACCESS_ICON = {
-    "full_text": "📄 전문 확인",
-    "abstract_only": "⚪ 초록만",
-    "paywalled": "🔒 접근 불가",
-    "not_found": "❌ 전문 없음",
+_FIELD_LABEL: dict[str, str] = {
+    "title":    "제목",
+    "authors":  "저자",
+    "year":     "연도",
+    "journal":  "저널",
+    "doi":      "DOI",
+    "volume":   "권(volume)",
+    "issue":    "호(issue)",
+    "pages":    "페이지",
 }
 
 
-def render_summary(report: DraftReport, *, st: Any) -> None:
-    """상단 요약 대시보드 — 주요 지표 4개 + 카테고리별 카운트."""
-    st.subheader("요약")
-
-    cols = st.columns(4)
-    cols[0].metric("처리 시간", f"{report.metadata.processing_seconds:.1f}초")
-    cols[1].metric("총 비용", f"${report.metadata.total_usd_cost:.3f}")
-    cols[2].metric("발견사항", report.summary_counts.get("findings_total", 0))
-    cols[3].metric("검증 레벨", report.metadata.verification_level)
-
-    st.markdown("**카테고리별 분포**")
-    count_cols = st.columns(min(4, max(1, len(report.summary_counts))))
-    for i, (k, v) in enumerate(report.summary_counts.items()):
-        count_cols[i % len(count_cols)].metric(k, v)
-
-
-def _format_reference_title(vref: VerifiedReference) -> tuple[str, str, str]:
-    """Return (authors_line, title, journal_line)."""
-    r = vref.canonical or vref.reference
-    if r.authors:
-        names = [a.family for a in r.authors[:3]]
-        authors_str = ", ".join(names)
-        if len(r.authors) > 3:
-            authors_str += " et al."
-    else:
-        authors_str = "(저자 없음)"
-    year_str = f" ({r.year})" if r.year else ""
-    authors_line = f"**{authors_str}{year_str}**"
-
-    title = r.title or "(제목 없음)"
-
-    journal_parts = []
-    if r.journal:
-        journal_parts.append(f"_{r.journal}_")
-    if r.volume:
-        journal_parts.append(f"{r.volume}" + (f"({r.issue})" if r.issue else ""))
-    if r.pages:
-        journal_parts.append(f"pp. {r.pages}")
-    if r.doi:
-        journal_parts.append(f"DOI: `{r.doi}`")
-    journal_line = ", ".join(journal_parts)
-
-    return authors_line, title, journal_line
-
-
-def render_findings(report: DraftReport, *, st: Any) -> None:
-    """문제 발견사항을 **참고문헌별로 그룹화**하여 표시.
-
-    각 그룹은 논문 메타데이터(저자·연도·제목·저널)를 헤더로 하고,
-    그 아래에 해당 논문에 대한 모든 findings을 심각도 내림차순으로 나열.
-    """
-    if not report.findings:
-        st.subheader("발견된 문제")
-        st.success("문제 없음. ✅")
-        return
-
-    ref_by_id: dict[str, VerifiedReference] = {
-        v.reference.id: v for v in report.references
-    }
-
-    # Group by reference_id (empty string = orphan citation)
-    grouped: dict[str, list[Finding]] = defaultdict(list)
-    orphan_citation_findings: list[Finding] = []
-    for f in report.findings:
-        if f.reference_id and f.reference_id in ref_by_id:
-            grouped[f.reference_id].append(f)
-        else:
-            orphan_citation_findings.append(f)
-
-    st.subheader(
-        f"발견된 문제 ({len(report.findings)}건, {len(grouped)}개 참고문헌에서)"
-    )
-    st.caption(
-        "심각한 문제가 많은 논문부터 순서대로 표시됩니다. "
-        "각 논문의 문제들은 심각도 내림차순으로 정렬됩니다."
-    )
-
-    # Sort groups by (max severity DESC, count DESC)
-    ordered = sorted(
-        grouped.items(),
-        key=lambda kv: (-max(f.severity for f in kv[1]), -len(kv[1])),
-    )
-
-    for idx, (ref_id, findings) in enumerate(ordered, start=1):
-        vref = ref_by_id[ref_id]
-        _render_reference_group(
-            idx=idx,
-            vref=vref,
-            findings=findings,
-            st=st,
-        )
-
-    if orphan_citation_findings:
-        st.markdown("---")
-        st.markdown("### ⚠️ 본문에서 인용되었으나 참고문헌 매칭 실패")
-        st.caption(
-            "아래 인용들은 참고문헌 목록에서 해당하는 논문을 찾지 못했습니다. "
-            "참고문헌을 추가하거나 인용을 수정하세요."
-        )
-        for f in orphan_citation_findings:
-            label = (
-                f"{CATEGORY_LABELS.get(f.category, f.category)} — "
-                f"{f.error_type or '-'}"
-            )
-            with st.expander(label, expanded=False):
-                _render_finding_body(f, show_ids=True, st=st)
-
-
-def _render_reference_group(
-    *,
-    idx: int,
-    vref: VerifiedReference,
-    findings: list[Finding],
-    st: Any,
-) -> None:
-    """단일 참고문헌에 대한 헤더 + 그 아래의 findings 목록."""
-    authors_line, title, journal_line = _format_reference_title(vref)
-
-    status_icon = STATUS_ICON.get(vref.status, "")
-    access_icon = ACCESS_ICON.get(vref.access_level, "")
-    max_sev = max(f.severity for f in findings)
-    sev_dots = "●" * max_sev + "○" * (5 - max_sev)
-
-    # Group header
-    st.markdown("---")
-    st.markdown(f"### #{idx}. {status_icon} {authors_line}")
-    st.markdown(f"**『{title}』**")
-    if journal_line:
-        st.caption(journal_line)
-
-    badges = []
-    badges.append(f"{status_icon} {vref.status}")
-    if access_icon:
-        badges.append(access_icon)
-    badges.append(f"최대 심각도 {sev_dots}")
-    badges.append(f"{len(findings)}건 발견")
-    st.caption(" · ".join(badges))
-
-    # Findings sorted by severity DESC
-    findings_sorted = sorted(findings, key=lambda f: -f.severity)
-    for fi_idx, f in enumerate(findings_sorted, start=1):
-        label = (
-            f"{CATEGORY_LABELS.get(f.category, f.category)} — "
-            f"{f.error_type or '-'} · "
-            f"{'●' * f.severity}{'○' * (5 - f.severity)} · "
-            f"신뢰도 {f.confidence}"
-        )
-        # Expand the first (most severe) finding of high-severity papers
-        expanded = max_sev >= 4 and fi_idx == 1
-        with st.expander(label, expanded=expanded):
-            _render_finding_body(f, show_ids=False, st=st)
-
-
-def _render_finding_body(f: Finding, *, show_ids: bool = False, st: Any) -> None:
-    cols = st.columns(2)
-    cols[0].markdown("**초안 인용**")
-    cols[0].markdown(f"> {f.draft_claim_quote}")
-    if f.source_evidence_quote:
-        cols[1].markdown("**원문 근거**")
-        cols[1].markdown(f"> {f.source_evidence_quote}")
-    else:
-        cols[1].markdown("**원문 근거**")
-        cols[1].caption("_(제시된 근거 없음)_")
-
-    st.markdown(f"**설명:** {f.explanation}")
-    if f.suggestion:
-        st.info(f"💡 **제안**: {f.suggestion}")
-
-    if show_ids:
-        st.caption(f"Citation: `{f.citation_id}` · Reference: `{f.reference_id}`")
-
+# ---------------------------------------------------------------------------
+# Top-level
+# ---------------------------------------------------------------------------
 
 def render_report(report: DraftReport, *, st: Any) -> None:
-    """전체 리포트 렌더. UI 최상단에서 호출."""
     st.title("📚 검증 리포트")
     st.caption(f"**문서:** {report.metadata.draft_title}")
-
     st.warning(
         "⚠️ **이 리포트는 보조 도구입니다.** 모든 판정은 LLM·API 출력이며 오판 가능성이 있습니다. "
         "🟡/🟢/⚪/❓/🔒 항목은 최종 사용자 확인이 필수입니다."
     )
+    _render_summary(report, st=st)
+    _render_reference_cards(report, st=st)
 
-    render_summary(report, st=st)
 
-    if report.unverified_manual_review:
-        with st.expander(f"수동 확인 권장 참고문헌 ({len(report.unverified_manual_review)}개)"):
-            for rid in report.unverified_manual_review:
-                st.markdown(f"- `{rid}`")
+def _render_summary(report: DraftReport, *, st: Any) -> None:
+    """Top dashboard. 4 headline metrics, then a single-line breakdown by status."""
+    st.subheader("요약")
 
-    render_findings(report, st=st)
+    # Roll up status counts from the verified_refs (more useful than the
+    # raw `summary_counts` dict which mixes statuses and access levels).
+    status_counts: dict[str, int] = defaultdict(int)
+    for v in report.references:
+        status_counts[v.status] += 1
+
+    n_refs = len(report.references)
+    n_problems = sum(
+        1 for v in report.references if v.status in {"metadata_error", "hallucination", "unverifiable"}
+    )
+
+    cols = st.columns(4)
+    cols[0].metric("총 참고문헌", n_refs)
+    cols[1].metric("문제 있음", n_problems)
+    cols[2].metric("처리 시간", f"{report.metadata.processing_seconds:.1f}초")
+    cols[3].metric("총 비용", f"${report.metadata.total_usd_cost:.3f}")
+
+    parts: list[str] = []
+    for status, (label, color) in _STATUS_DISPLAY.items():
+        count = status_counts.get(status, 0)
+        if count:
+            parts.append(f"<span style='color:{color}'>{label} {count}</span>")
+    if parts:
+        st.markdown(" · ".join(parts), unsafe_allow_html=True)
+
+
+# ---------------------------------------------------------------------------
+# Per-reference card
+# ---------------------------------------------------------------------------
+
+def _render_reference_cards(report: DraftReport, *, st: Any) -> None:
+    """Sort refs by problem severity and render one card per ref."""
+    findings_by_ref: dict[str, list[Finding]] = defaultdict(list)
+    orphan_findings: list[Finding] = []
+    for f in report.findings:
+        if f.reference_id and any(v.reference.id == f.reference_id for v in report.references):
+            findings_by_ref[f.reference_id].append(f)
+        else:
+            orphan_findings.append(f)
+
+    # Order: hallucination > metadata_error > unverifiable > verified-with-content-finding > verified
+    order_key = {
+        "hallucination": 0,
+        "metadata_error": 1,
+        "unverifiable": 2,
+        "verified": 3,
+    }
+
+    refs_sorted = sorted(
+        report.references,
+        key=lambda v: (
+            order_key.get(v.status, 99),
+            -max([f.severity for f in findings_by_ref.get(v.reference.id, [])] or [0]),
+            v.reference.id,
+        ),
+    )
+
+    n_problem_refs = sum(
+        1 for v in refs_sorted
+        if v.status != "verified" or findings_by_ref.get(v.reference.id)
+    )
+    st.subheader(f"참고문헌별 검증 결과 ({n_problem_refs}/{len(refs_sorted)} 문제 있음)")
+    st.caption("문제가 있는 항목부터 위에 표시됩니다.")
+
+    for idx, vref in enumerate(refs_sorted, start=1):
+        _render_card(idx, vref, findings_by_ref.get(vref.reference.id, []), st=st)
+
+    if orphan_findings:
+        st.markdown("---")
+        st.markdown("### ⚠️ 본문에서 인용되었으나 참고문헌 매칭 실패")
+        for f in orphan_findings:
+            with st.expander(f.error_type or "고아 인용", expanded=False):
+                st.markdown(f.explanation)
+                if f.suggestion:
+                    st.info(f"💡 {f.suggestion}")
+
+
+def _render_card(
+    idx: int,
+    vref: VerifiedReference,
+    findings: list[Finding],
+    *,
+    st: Any,
+) -> None:
+    user_ref = vref.reference
+    canonical = vref.canonical
+
+    # Status banner
+    label, color = _STATUS_DISPLAY.get(vref.status, (vref.status, "#666"))
+    st.markdown("---")
+    st.markdown(
+        f"### #{idx}. <span style='color:{color}'>{label}</span> — {_short_ref_line(user_ref)}",
+        unsafe_allow_html=True,
+    )
+
+    # One-line summary
+    summary = _verdict_summary(vref, findings)
+    if summary:
+        st.markdown(f"**{summary}**")
+
+    # The user's original raw citation (so they can locate it in their draft)
+    if user_ref.raw_text:
+        st.caption(f"원문 그대로: _{user_ref.raw_text.strip()[:300]}_")
+
+    # Diff table
+    if vref.field_diffs and canonical is not None:
+        _render_diff_table(vref, st=st)
+
+    # Content findings (deduped already by aggregator). Cap at 2 visible.
+    all_content = [f for f in findings if f.category == "content_mismatch"]
+    visible_content = all_content[:2]
+    extra_count = len(all_content) - len(visible_content)
+    if visible_content:
+        header = f"📝 인용 내용 검증 결과 ({len(all_content)}건)"
+        with st.expander(header, expanded=True):
+            for f in visible_content:
+                _render_content_finding(f, st=st)
+            if extra_count > 0:
+                st.caption(
+                    f"… 비슷한 발견 {extra_count}건 추가 — 상위 2건만 표시. "
+                    "전체는 JSON 다운로드에서 확인 가능."
+                )
+
+    # Hallucination explainer (if status is hallucination)
+    if vref.status == "hallucination":
+        st.error(
+            "이 참고문헌은 4개 학술 DB와 웹 검색에서 모두 찾을 수 없어 LLM이 생성한 가짜 인용일 가능성이 높습니다. "
+            "직접 확인 후 삭제하거나 올바른 출처로 교체하세요."
+        )
+
+
+def _render_diff_table(vref: VerifiedReference, *, st: Any) -> None:
+    """Side-by-side: 사용자 인용 vs 실제 논문, only flagged fields."""
+    # Order rows by severity (critical first)
+    order = {"critical": 0, "major": 1, "minor": 2, "info": 3}
+    rows = sorted(
+        vref.field_diffs.items(),
+        key=lambda kv: order.get(vref.diff_severities.get(kv[0], "minor"), 9),
+    )
+
+    rendered: list[str] = []
+    rendered.append(
+        "<table style='width:100%; border-collapse:collapse;'>"
+        "<tr style='background:#f5f5f5'>"
+        "<th style='text-align:left; padding:6px; width:90px'>필드</th>"
+        "<th style='text-align:left; padding:6px'>사용자 인용</th>"
+        "<th style='text-align:left; padding:6px'>실제 논문</th>"
+        "</tr>"
+    )
+    for field_name, (user_val, canonical_val) in rows:
+        sev = vref.diff_severities.get(field_name, "minor")
+        sev_color = _SEVERITY_COLOR.get(sev, "#666")
+        label = _FIELD_LABEL.get(field_name, field_name)
+        rendered.append(
+            "<tr style='border-top:1px solid #eee'>"
+            f"<td style='padding:6px; color:{sev_color}; font-weight:600'>● {label}</td>"
+            f"<td style='padding:6px; color:#c62828'>{_html_escape(user_val) or '<em>(없음)</em>'}</td>"
+            f"<td style='padding:6px; color:#2e7d32'>{_html_escape(canonical_val) or '<em>(없음)</em>'}</td>"
+            "</tr>"
+        )
+    rendered.append("</table>")
+    st.markdown("".join(rendered), unsafe_allow_html=True)
+
+
+def _render_content_finding(f: Finding, *, st: Any) -> None:
+    sev_dots = "●" * f.severity + "○" * (5 - f.severity)
+    st.markdown(
+        f"**{f.error_type or '내용 불일치'}** · "
+        f"<span style='color:#c62828'>{sev_dots}</span> · 신뢰도 {f.confidence}",
+        unsafe_allow_html=True,
+    )
+    # Side-by-side: 초안 인용 (left, red tone) vs 원문 근거 (right, green tone)
+    left, right = st.columns(2)
+    with left:
+        st.markdown("**초안 인용**")
+        if f.draft_claim_quote:
+            st.markdown(
+                f"<div style='background:#fff3f3; padding:0.5em 0.7em; "
+                f"border-radius:4px; border-left:3px solid #c62828; "
+                f"color:#333; font-size:0.92em'>{f.draft_claim_quote}</div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            st.caption("_(인용 문장 없음)_")
+    with right:
+        st.markdown("**원문 근거**")
+        if f.source_evidence_quote:
+            st.markdown(
+                f"<div style='background:#f1f8e9; padding:0.5em 0.7em; "
+                f"border-radius:4px; border-left:3px solid #2e7d32; "
+                f"color:#333; font-size:0.92em'>{f.source_evidence_quote}</div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            st.caption("_(원문에서 근거 인용 못 찾음)_")
+
+    if f.explanation:
+        st.markdown(f"**설명:** {f.explanation}")
+    if f.suggestion:
+        st.info(f"💡 **제안:** {f.suggestion}")
+    st.markdown("")  # spacer between findings
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _short_ref_line(ref: Any) -> str:
+    """One-line: '저자 et al. (연도) — 제목'"""
+    if ref.authors:
+        names = [a.family for a in ref.authors[:2]]
+        author_str = " & ".join(names)
+        if len(ref.authors) > 2:
+            author_str += " et al."
+    else:
+        author_str = "(저자 없음)"
+    year_str = f" ({ref.year})" if ref.year else ""
+    title = ref.title or "(제목 없음)"
+    return f"**{author_str}{year_str}** — _{title[:120]}_"
+
+
+def _verdict_summary(vref: VerifiedReference, findings: list[Finding]) -> str:
+    """One-line plain-Korean summary: what's wrong with this ref?"""
+    if vref.status == "hallucination":
+        return "❌ 4개 DB와 웹 검색에서 찾을 수 없음 — 가짜 인용 의심"
+    if vref.status == "unverifiable":
+        return "❓ 확인 불가 — 수동 검증 권장"
+    if vref.status == "metadata_error":
+        critical = [k for k, sev in vref.diff_severities.items() if sev == "critical"]
+        major = [k for k, sev in vref.diff_severities.items() if sev == "major"]
+        info = [k for k, sev in vref.diff_severities.items() if sev == "info"]
+        if vref.preprint_vs_published:
+            return "ℹ️ 1년 차이 (preprint vs 공식 출판) — 공식 출판 연도 권장"
+        if critical:
+            return f"❌ 중요한 메타데이터 오류: {', '.join(_FIELD_LABEL.get(k, k) for k in critical)}"
+        if major:
+            return f"⚠️ 메타데이터 차이: {', '.join(_FIELD_LABEL.get(k, k) for k in major)}"
+        if info:
+            return f"ℹ️ 사소한 차이: {', '.join(_FIELD_LABEL.get(k, k) for k in info)}"
+    if vref.status == "verified":
+        n_content = sum(1 for f in findings if f.category == "content_mismatch")
+        if n_content:
+            return f"⚠️ 메타데이터는 정확하나 인용 내용에 문제가 있을 수 있습니다 ({n_content}건)"
+        return "✅ 메타데이터·인용 내용 모두 검증됨"
+    return ""
+
+
+def _html_escape(s: Any) -> str:
+    """Safe escape for the HTML diff table."""
+    if s is None:
+        return ""
+    s = str(s)
+    return (
+        s.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )

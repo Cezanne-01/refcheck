@@ -17,7 +17,7 @@ from refcheck.fetch.unpaywall import UnpaywallClient
 from refcheck.fetch.web_search import WebSearchClient
 from refcheck.fetch.full_text import FullTextFetcher
 from refcheck.report.json_exporter import export_json
-from refcheck.report.markdown_exporter import export_markdown
+from refcheck.report.pdf_exporter import export_pdf, PDFExportError
 
 
 def main() -> None:
@@ -25,7 +25,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="refcheck", description="참고문헌 검증 도구")
     parser.add_argument("--input", "-i", required=True, type=Path, help="초안 PDF 또는 .txt 파일")
     parser.add_argument("--output", "-o", type=Path, default=Path("./refcheck_report"),
-                        help="출력 기본 경로 (.json, .md 자동 생성)")
+                        help="출력 기본 경로 (.json + .pdf 자동 생성)")
     parser.add_argument("--level", "-l", choices=["fast", "precise", "ultra"],
                         default="precise", help="검증 레벨")
     parser.add_argument("--cache-dir", type=Path, default=Path("./.cache"),
@@ -105,13 +105,20 @@ def main() -> None:
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     json_path = args.output.with_suffix(".json")
-    md_path = args.output.with_suffix(".md")
+    pdf_path = args.output.with_suffix(".pdf")
     json_path.write_text(export_json(report), encoding="utf-8")
-    md_path.write_text(export_markdown(report), encoding="utf-8")
+
+    pdf_written = False
+    try:
+        pdf_path.write_bytes(export_pdf(report))
+        pdf_written = True
+    except PDFExportError as e:
+        print(f"WARN: PDF 생성 실패 — {e}", file=sys.stderr)
 
     print(f"✅ 리포트 생성 완료")
     print(f"  - JSON: {json_path}")
-    print(f"  - Markdown: {md_path}")
+    if pdf_written:
+        print(f"  - PDF:  {pdf_path}")
     print(f"  - 처리 시간: {report.metadata.processing_seconds:.1f}초")
     print(f"  - 총 비용: ${report.metadata.total_usd_cost:.3f}")
     print(f"  - 발견된 문제: {report.summary_counts.get('findings_total', 0)}건")

@@ -40,7 +40,11 @@ class PipelineConfig:
     concurrency: int = 5
     max_references: int = 200
     warn_references: int = 100
-    agent_max_turns: int = 6
+    # Number of agent tool-call iterations per reference. The metadata agent
+    # may need to retry searches with the year dropped, with title variants,
+    # and with a web_search fallback. 6 was tight; 10 leaves room for one
+    # fallback path without timing out before submit_final.
+    agent_max_turns: int = 10
 
 
 async def run_pipeline(
