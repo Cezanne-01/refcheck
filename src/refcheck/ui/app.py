@@ -26,6 +26,29 @@ from refcheck.ui.renderer import render_report
 load_dotenv()
 
 
+def _hydrate_env_from_streamlit_secrets() -> None:
+    """Copy Streamlit secrets into ``os.environ`` so existing ``os.getenv``
+    code paths work on Streamlit Cloud without code changes.
+
+    Local dev typically uses a ``.env`` file (loaded above by ``load_dotenv``).
+    Streamlit Cloud has no ``.env`` — secrets are configured via the dashboard
+    and exposed through ``st.secrets``. We iterate ``st.secrets`` and copy
+    any string values into the environment when not already set.
+
+    Errors (no secrets.toml locally, etc.) are silently ignored — local dev
+    falls back to ``.env`` and Streamlit Cloud sets secrets via dashboard.
+    """
+    try:
+        for key, value in st.secrets.items():  # type: ignore[attr-defined]
+            if isinstance(value, str) and not os.getenv(key):
+                os.environ[key] = value
+    except Exception:
+        pass
+
+
+_hydrate_env_from_streamlit_secrets()
+
+
 def main() -> None:
     st.set_page_config(page_title="refcheck", layout="wide", page_icon="📚")
     st.title("📚 refcheck — 참고문헌 검증")

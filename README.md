@@ -29,6 +29,26 @@ brew install cairo pango gdk-pixbuf libffi
 
 (weasyprint가 없어도 JSON 다운로드 + 웹 UI는 정상 동작합니다.)
 
+## Streamlit Community Cloud 배포
+
+저장소가 이미 `streamlit_app.py`(상위 진입점) + `packages.txt`(시스템 의존성:
+cairo/pango/gdk-pixbuf/libffi/Noto CJK 폰트) + `pyproject.toml`을 포함하므로
+별도 설정 파일 추가 없이 바로 배포 가능합니다.
+
+1. https://share.streamlit.io 접속 → GitHub 계정 연결
+2. **New app** 클릭 → repository `Cezanne-01/refcheck`, branch `main`,
+   main file `streamlit_app.py` 선택
+3. **Advanced settings → Secrets** 탭에서 환경변수 입력 (TOML 형식):
+   ``` toml
+   OPENAI_API_KEY = "sk-..."
+   UNPAYWALL_EMAIL = "your@email.com"
+   SEMANTIC_SCHOLAR_API_KEY = ""  # 선택
+   ```
+4. **Deploy** 클릭. 첫 빌드는 5~10분.
+
+`st.secrets`에 저장한 키는 자동으로 `os.environ`으로 주입되므로 코드 수정 없이
+로컬 `.env`와 동일하게 작동합니다.
+
 ## CLI 사용 (선택)
 
 웹 UI 외에 CLI로도 실행 가능합니다:
