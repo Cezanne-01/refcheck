@@ -9,9 +9,9 @@ from refcheck.ingest.section_splitter import split_body_and_references
 from refcheck.extract.reference_parser import parse_references
 from refcheck.extract.citation_extractor import extract_citations
 from refcheck.extract.linker import check_orphans
-from refcheck.verify.metadata import verify_all_references
 from refcheck.fetch.source_fetcher import fetch_sources
-from refcheck.verify.content import verify_all_content
+from refcheck.fetch.full_text import FullTextFetcher
+from refcheck.fetch.web_search import WebSearchClient
 from refcheck.verify.agent_metadata import verify_all_references_agent
 from refcheck.verify.agent_content import verify_all_content_agent
 from refcheck.report.aggregator import build_draft_report
@@ -20,7 +20,7 @@ from refcheck.fetch.crossref import CrossrefClient
 from refcheck.fetch.openalex import OpenAlexClient
 from refcheck.fetch.semantic_scholar import SemanticScholarClient
 from refcheck.fetch.pubmed import PubMedClient
-from refcheck.fetch.unpaywall import UnpaywallClient
+from refcheck.fetch.unpaywall import UnpaywallClient  # noqa: F401  -- kept for type hints in tests
 from refcheck.ui.progress import ProgressReporter, Stage
 
 
@@ -40,7 +40,6 @@ class PipelineConfig:
     concurrency: int = 5
     max_references: int = 200
     warn_references: int = 100
-    use_agents: bool = False
     agent_max_turns: int = 6
 
 
@@ -54,7 +53,8 @@ async def run_pipeline(
     openalex: OpenAlexClient,
     semantic_scholar: SemanticScholarClient,
     pubmed: PubMedClient,
-    unpaywall: UnpaywallClient,
+    web_search: WebSearchClient,
+    full_text_fetcher: FullTextFetcher,
     progress: ProgressReporter | None = None,
 ) -> DraftReport:
     start = time.time()
@@ -93,52 +93,39 @@ async def run_pipeline(
 
     orphan_cits, orphan_refs = check_orphans(citations, references)
 
-    reporter.start(Stage.VERIFY_METADATA, total=len(references), message="4개 DB에서 메타데이터 검증")
-    if config.use_agents:
-        openai_raw = llm._client  # type: ignore[attr-defined]
-        verified = await verify_all_references_agent(
-            references,
-            openai_client=openai_raw,
-            crossref=crossref, openalex=openalex,
-            semantic_scholar=semantic_scholar, pubmed=pubmed,
-            model=models["content"],
-            max_turns=config.agent_max_turns,
-            concurrency=min(3, config.concurrency),
-        )
-    else:
-        verified = await verify_all_references(
-            references,
-            crossref=crossref, openalex=openalex,
-            semantic_scholar=semantic_scholar, pubmed=pubmed,
-            concurrency=config.concurrency,
-        )
+    openai_raw = llm._client  # type: ignore[attr-defined]
+
+    reporter.start(Stage.VERIFY_METADATA, total=len(references), message="에이전트로 메타데이터 검증")
+    verified = await verify_all_references_agent(
+        references,
+        openai_client=openai_raw,
+        crossref=crossref, openalex=openalex,
+        semantic_scholar=semantic_scholar, pubmed=pubmed,
+        web_search=web_search,
+        model=models["content"],
+        max_turns=config.agent_max_turns,
+        concurrency=min(3, config.concurrency),
+    )
     reporter.finish(Stage.VERIFY_METADATA)
 
     reporter.start(Stage.FETCH_SOURCES, total=len(verified), message="전문·초록 확보")
     verified = await fetch_sources(
-        verified, unpaywall=unpaywall,
+        verified,
+        full_text_fetcher=full_text_fetcher,
         cache_dir=config.cache_dir,
         concurrency=config.concurrency,
     )
     reporter.finish(Stage.FETCH_SOURCES)
 
-    reporter.start(Stage.VERIFY_CONTENT, total=len(citations), message="LLM으로 인용 내용 검증")
-    if config.use_agents:
-        openai_raw = llm._client  # type: ignore[attr-defined]
-        findings = await verify_all_content_agent(
-            citations, verified,
-            openai_client=openai_raw,
-            unpaywall=unpaywall, openalex=openalex,
-            model=models["content"],
-            max_turns=config.agent_max_turns,
-            concurrency=min(3, config.concurrency),
-        )
-    else:
-        findings = await verify_all_content(
-            citations, verified, llm=llm,
-            model=models["content"],
-            concurrency=config.concurrency,
-        )
+    reporter.start(Stage.VERIFY_CONTENT, total=len(citations), message="에이전트로 인용 내용 검증")
+    findings = await verify_all_content_agent(
+        citations, verified,
+        openai_client=openai_raw,
+        full_text_fetcher=full_text_fetcher,
+        model=models["content"],
+        max_turns=config.agent_max_turns,
+        concurrency=min(3, config.concurrency),
+    )
     reporter.finish(Stage.VERIFY_CONTENT, message=f"{len(findings)}개 발견사항")
 
     reporter.start(Stage.AGGREGATE, total=1)

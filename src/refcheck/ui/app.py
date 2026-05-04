@@ -15,6 +15,8 @@ from refcheck.fetch.openalex import OpenAlexClient
 from refcheck.fetch.semantic_scholar import SemanticScholarClient
 from refcheck.fetch.pubmed import PubMedClient
 from refcheck.fetch.unpaywall import UnpaywallClient
+from refcheck.fetch.web_search import WebSearchClient
+from refcheck.fetch.full_text import FullTextFetcher
 from refcheck.schema.models import DraftReport
 from refcheck.ui.progress import ProgressReporter, ProgressEvent, Stage
 from refcheck.ui.widgets import render_upload, render_config, check_env_readiness
@@ -107,6 +109,8 @@ async def _execute_pipeline(upload: Any, config: Any, reporter: ProgressReporter
     semantic = SemanticScholarClient(api_key=os.getenv("SEMANTIC_SCHOLAR_API_KEY") or None)
     pubmed = PubMedClient()
     unpaywall = UnpaywallClient(email=unpaywall_email)
+    web_search = WebSearchClient()
+    full_text_fetcher = FullTextFetcher(unpaywall=unpaywall)
 
     try:
         report = await run_pipeline(
@@ -115,14 +119,14 @@ async def _execute_pipeline(upload: Any, config: Any, reporter: ProgressReporter
             config=PipelineConfig(
                 cache_dir=config.cache_dir,
                 verification_level=config.verification_level,
-                use_agents=config.use_agents,
             ),
             llm=llm,
             crossref=crossref,
             openalex=openalex,
             semantic_scholar=semantic,
             pubmed=pubmed,
-            unpaywall=unpaywall,
+            web_search=web_search,
+            full_text_fetcher=full_text_fetcher,
             progress=reporter,
         )
     finally:
@@ -131,6 +135,8 @@ async def _execute_pipeline(upload: Any, config: Any, reporter: ProgressReporter
         await semantic.close()
         await pubmed.close()
         await unpaywall.close()
+        await web_search.close()
+        await full_text_fetcher.close()
     return report
 
 
