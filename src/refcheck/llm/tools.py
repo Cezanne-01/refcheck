@@ -159,6 +159,26 @@ METADATA_TOOLS: list[dict[str, Any]] = [
             "parameters": _doi_args_schema,
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": (
+                "Fallback general web search (DuckDuckGo). Use ONLY after at least 2 "
+                "academic DBs have returned no match. Returns up to 5 hits with "
+                "title/url/snippet — extract DOI or arXiv ID from results, then "
+                "call lookup_doi_crossref or search_* with the recovered identifier."
+            ),
+            "parameters": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["query"],
+                "properties": {
+                    "query": {"type": "string", "description": "Search query"},
+                },
+            },
+        },
+    },
     SUBMIT_METADATA_FINAL,
 ]
 
@@ -224,27 +244,19 @@ CONTENT_TOOLS: list[dict[str, Any]] = [
         "function": {
             "name": "fetch_full_text",
             "description": (
-                "Attempt to retrieve full text of the paper. "
-                "Only works if the paper has an open access version. Returns text or null."
+                "Try to download the paper's full text via arXiv → Europe PMC → "
+                "Unpaywall. On success the source_text is replaced with the full "
+                "body, so subsequent find_passage calls search the body. Returns "
+                "first ~8000 characters plus the source identifier."
             ),
             "parameters": {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["doi"],
-                "properties": {"doi": {"type": "string"}},
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "fetch_abstract",
-            "description": "Refetch the abstract from OpenAlex/SS/PubMed for a given DOI.",
-            "parameters": {
-                "type": "object",
-                "additionalProperties": False,
-                "required": ["doi"],
-                "properties": {"doi": {"type": "string"}},
+                "required": ["doi", "title"],
+                "properties": {
+                    "doi": {"type": ["string", "null"]},
+                    "title": {"type": "string"},
+                },
             },
         },
     },
@@ -287,11 +299,13 @@ class MetadataToolDispatcher:
         openalex: Any,
         semantic_scholar: Any,
         pubmed: Any,
+        web_search: Any | None = None,
     ) -> None:
         self._crossref = crossref
         self._openalex = openalex
         self._semantic = semantic_scholar
         self._pubmed = pubmed
+        self._web_search = web_search
 
     async def dispatch(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
         try:
@@ -345,6 +359,17 @@ class MetadataToolDispatcher:
                 out["abstract"] = res.abstract
                 return out
 
+            if name == "web_search":
+                if self._web_search is None:
+                    return {"hits": [], "note": "web_search not configured"}
+                hits = await self._web_search.search(args["query"])
+                return {
+                    "hits": [
+                        {"title": h.title, "url": h.url, "snippet": h.snippet}
+                        for h in hits
+                    ],
+                }
+
             return {"error": f"unknown tool: {name}"}
         except Exception as e:
             return {"error": str(e)}
@@ -354,21 +379,22 @@ class ContentToolDispatcher:
     """Routes content-agent tool calls.
 
     Holds the current source text (abstract or full text of the cited paper).
-    ``find_passage`` searches this text by keyword overlap.
-    ``fetch_full_text`` / ``fetch_abstract`` are optional — attempt to upgrade
-    the source text and return new text. Caller updates source_text if successful.
+    ``find_passage`` searches this text by keyword overlap. ``fetch_full_text``
+    runs the FullTextFetcher chain (arXiv → Europe PMC → Unpaywall) and, on
+    success, replaces ``source_text`` so the next ``find_passage`` searches
+    the full body.
     """
+
+    _PREVIEW_CHARS = 8000
 
     def __init__(
         self,
         *,
         source_text: str = "",
-        openalex: Any | None = None,
-        unpaywall: Any | None = None,
+        full_text_fetcher: Any | None = None,
     ) -> None:
         self._source_text = source_text
-        self._openalex = openalex
-        self._unpaywall = unpaywall
+        self._fetcher = full_text_fetcher
 
     @property
     def source_text(self) -> str:
@@ -380,10 +406,10 @@ class ContentToolDispatcher:
     async def dispatch(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
         if name == "find_passage":
             return self._find_passage(args["query"])
-        if name == "fetch_abstract":
-            return await self._fetch_abstract(args["doi"])
         if name == "fetch_full_text":
-            return await self._fetch_full_text(args["doi"])
+            return await self._fetch_full_text(
+                args.get("doi"), args.get("title", "")
+            )
         return {"error": f"unknown tool: {name}"}
 
     def _find_passage(self, query: str) -> dict[str, Any]:
@@ -402,28 +428,33 @@ class ContentToolDispatcher:
         matches.sort(key=lambda x: -x[0])
         return {"passages": [m[1][:1500] for m in matches[:3]]}
 
-    async def _fetch_abstract(self, doi: str) -> dict[str, Any]:
-        # Note: OpenAlexClient currently has no DOI-lookup method. The abstract
-        # for this paper is already embedded in the agent's user prompt, so
-        # returning a clear "not implemented" signal avoids misleading the
-        # agent with unrelated search results.
-        return {
-            "abstract": None,
-            "note": "fetch_abstract not implemented in this version; "
-                    "use the abstract provided in the user prompt",
-        }
-
-    async def _fetch_full_text(self, doi: str) -> dict[str, Any]:
-        if self._unpaywall is None:
-            return {"full_text": None, "note": "no unpaywall client"}
-        try:
-            url = await self._unpaywall.oa_pdf_url(doi)
-            if not url:
-                return {"full_text": None, "note": "not open access"}
+    async def _fetch_full_text(
+        self, doi: str | None, title: str
+    ) -> dict[str, Any]:
+        if self._fetcher is None:
             return {
                 "full_text": None,
-                "oa_pdf_url": url,
-                "note": "OA URL found but full text download not executed in-agent",
+                "source": "none",
+                "note": "fetcher not configured",
             }
+        try:
+            result = await self._fetcher.fetch(doi=doi, title=title, year=None)
         except Exception as e:
-            return {"full_text": None, "error": str(e)}
+            return {"full_text": None, "source": "none", "error": str(e)}
+
+        if result.text:
+            self._source_text = result.text
+            return {
+                "full_text": result.text[: self._PREVIEW_CHARS],
+                "source": result.source,
+                "url": result.url,
+                "note": (
+                    "source_text replaced with full body — call find_passage "
+                    "again to search the body"
+                ),
+            }
+        return {
+            "full_text": None,
+            "source": result.source,
+            "note": "full text not available from any source",
+        }

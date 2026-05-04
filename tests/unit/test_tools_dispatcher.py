@@ -25,8 +25,14 @@ def test_content_tools_include_passage_search():
     names = {t["function"]["name"] for t in CONTENT_TOOLS}
     assert "find_passage" in names
     assert "fetch_full_text" in names
-    assert "fetch_abstract" in names
     assert "submit_final" in names
+    # fetch_abstract was a stub — removed; content agent uses abstract from prompt
+    assert "fetch_abstract" not in names
+
+
+def test_metadata_tools_include_web_search():
+    names = {t["function"]["name"] for t in METADATA_TOOLS}
+    assert "web_search" in names
 
 
 def test_final_tools_have_strict_schemas():
@@ -84,6 +90,93 @@ async def test_metadata_dispatcher_returns_empty_on_miss():
         {"title": "nonexistent", "authors": [], "year": 2099},
     )
     assert result == {"found": False}
+
+
+@pytest.mark.asyncio
+async def test_metadata_dispatcher_web_search():
+    from refcheck.fetch.web_search import WebSearchHit
+    ws = MagicMock()
+    ws.search = AsyncMock(return_value=[
+        WebSearchHit(title="T", url="https://x", snippet="DOI 10.1/x"),
+        WebSearchHit(title="T2", url="https://y", snippet="more"),
+    ])
+    dispatcher = MetadataToolDispatcher(
+        crossref=MagicMock(), openalex=MagicMock(),
+        semantic_scholar=MagicMock(), pubmed=MagicMock(),
+        web_search=ws,
+    )
+    out = await dispatcher.dispatch("web_search", {"query": "foo"})
+    assert "hits" in out
+    assert len(out["hits"]) == 2
+    assert out["hits"][0]["url"] == "https://x"
+    assert out["hits"][0]["snippet"] == "DOI 10.1/x"
+
+
+@pytest.mark.asyncio
+async def test_metadata_dispatcher_web_search_no_client():
+    """If web_search client not configured, returns empty hits with note."""
+    dispatcher = MetadataToolDispatcher(
+        crossref=MagicMock(), openalex=MagicMock(),
+        semantic_scholar=MagicMock(), pubmed=MagicMock(),
+        web_search=None,
+    )
+    out = await dispatcher.dispatch("web_search", {"query": "foo"})
+    assert out["hits"] == []
+    assert "not configured" in out.get("note", "")
+
+
+@pytest.mark.asyncio
+async def test_content_dispatcher_fetch_full_text_updates_source():
+    from refcheck.fetch.full_text import FullTextResult
+    fetcher = MagicMock()
+    fetcher.fetch = AsyncMock(return_value=FullTextResult(
+        text="HELLO BODY about dopamine",
+        source="arxiv",
+        url="https://arxiv.org/x",
+    ))
+    dispatcher = ContentToolDispatcher(
+        source_text="abstract only",
+        full_text_fetcher=fetcher,
+    )
+    out = await dispatcher.dispatch(
+        "fetch_full_text", {"doi": "10.1/x", "title": "t"}
+    )
+    assert out["full_text"] == "HELLO BODY about dopamine"
+    assert out["source"] == "arxiv"
+    # source_text should be updated for next find_passage
+    assert dispatcher.source_text == "HELLO BODY about dopamine"
+
+
+@pytest.mark.asyncio
+async def test_content_dispatcher_fetch_full_text_no_fetcher():
+    dispatcher = ContentToolDispatcher(
+        source_text="abstract only",
+        full_text_fetcher=None,
+    )
+    out = await dispatcher.dispatch(
+        "fetch_full_text", {"doi": "10.1/x", "title": "t"}
+    )
+    assert out["full_text"] is None
+    assert "not configured" in out.get("note", "")
+
+
+@pytest.mark.asyncio
+async def test_content_dispatcher_fetch_full_text_failure():
+    from refcheck.fetch.full_text import FullTextResult
+    fetcher = MagicMock()
+    fetcher.fetch = AsyncMock(return_value=FullTextResult(
+        text=None, source="none",
+    ))
+    dispatcher = ContentToolDispatcher(
+        source_text="abstract only",
+        full_text_fetcher=fetcher,
+    )
+    out = await dispatcher.dispatch(
+        "fetch_full_text", {"doi": "10.1/x", "title": "t"}
+    )
+    assert out["full_text"] is None
+    # source_text untouched
+    assert dispatcher.source_text == "abstract only"
 
 
 @pytest.mark.asyncio
