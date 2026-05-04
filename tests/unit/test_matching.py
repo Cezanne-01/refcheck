@@ -23,16 +23,48 @@ def test_title_similarity_different():
                             "Schizophrenia treatment") < 0.40
 
 
-def test_authors_match_first_author_required():
+def test_authors_match_overlap():
     a1 = [Author(family="Potenza"), Author(family="Balodis")]
     a2 = [Author(family="Potenza"), Author(family="Kober"), Author(family="Balodis")]
-    assert authors_match(a1, a2) is True  # 첫 저자 일치 + 부분집합
+    assert authors_match(a1, a2) is True
 
 
-def test_authors_mismatch_different_first():
+def test_authors_mismatch_no_overlap():
     a1 = [Author(family="Smith")]
     a2 = [Author(family="Jones")]
     assert authors_match(a1, a2) is False
+
+
+def test_authors_match_first_author_swap():
+    """첫 저자만 다르고 나머지 겹쳐도 통과 (인용에서 저자 순서 바뀐 경우)."""
+    a1 = [Author(family="Kim"), Author(family="Lee")]
+    a2 = [Author(family="Lee"), Author(family="Kim")]
+    assert authors_match(a1, a2) is True
+
+
+def test_authors_match_partial_overlap():
+    """첫 저자 다르지만 다른 저자 한 명이라도 겹치면 통과."""
+    a1 = [Author(family="WrongFirst"), Author(family="Potenza")]
+    a2 = [Author(family="Potenza"), Author(family="Balodis")]
+    assert authors_match(a1, a2) is True
+
+
+def test_title_similarity_ignores_smart_quotes():
+    a = "Children's outcomes — a study"
+    b = "Children's outcomes - a study"
+    assert title_similarity(a, b) >= 0.95
+
+
+def test_title_similarity_ignores_em_dash_vs_hyphen():
+    a = "Effects of dopamine—a review"
+    b = "Effects of dopamine-a review"
+    assert title_similarity(a, b) >= 0.95
+
+
+def test_title_similarity_handles_smart_double_quotes():
+    a = "The “gold standard” trial"
+    b = 'The "gold standard" trial'
+    assert title_similarity(a, b) >= 0.95
 
 
 def test_compare_metadata_all_match():

@@ -1,12 +1,23 @@
 from __future__ import annotations
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from typing import Literal
 from rapidfuzz import fuzz
 from refcheck.schema.models import Reference, Author
 
 
+_SMART_TO_ASCII = str.maketrans({
+    "‘": "'", "’": "'", "‚": "'", "‛": "'",
+    "“": '"', "”": '"', "„": '"', "‟": '"',
+    "–": "-", "—": "-", "−": "-",  # en/em dash, minus
+    " ": " ", " ": " ", "​": "",   # nbsp, thin sp, zero-width
+})
+
+
 def _normalize_title(s: str) -> str:
+    s = unicodedata.normalize("NFKC", s)
+    s = s.translate(_SMART_TO_ASCII)
     s = s.lower().strip()
     s = re.sub(r"[^\w\s]", " ", s)
     s = re.sub(r"\s+", " ", s)
@@ -27,14 +38,17 @@ def _norm_surname(s: str) -> str:
 
 
 def authors_match(a: list[Author], b: list[Author]) -> bool:
-    """첫 저자 성 일치 + a의 저자 집합이 b의 부분집합 (et al. 허용)."""
+    """저자 집합 교집합이 비어있지 않으면 일치로 본다.
+
+    예전엔 첫 저자 성 일치를 강제했지만, 인용 과정에서 저자 순서가 바뀌거나
+    첫 저자만 잘못 적힌 경우 실제로 존재하는 논문이 false negative로 떨어졌다.
+    한 명이라도 겹치면 후보로 인정하고, 최종 verdict는 LLM 에이전트가 종합해서 내린다.
+    """
     if not a or not b:
         return False
-    if _norm_surname(a[0].family) != _norm_surname(b[0].family):
-        return False
-    set_a = {_norm_surname(x.family) for x in a}
-    set_b = {_norm_surname(x.family) for x in b}
-    return set_a.issubset(set_b) or set_b.issubset(set_a)
+    set_a = {_norm_surname(x.family) for x in a if x.family}
+    set_b = {_norm_surname(x.family) for x in b if x.family}
+    return bool(set_a & set_b)
 
 
 @dataclass
