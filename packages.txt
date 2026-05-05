@@ -5,3 +5,4 @@ libgdk-pixbuf-2.0-0
 libffi-dev
 shared-mime-info
 fonts-noto-cjk
+fonts-noto-color-emoji

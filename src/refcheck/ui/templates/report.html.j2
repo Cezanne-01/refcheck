@@ -5,7 +5,15 @@
 <title>참고문헌 검증 리포트 — {{ report.metadata.draft_title }}</title>
 <style>
   body {
-    font-family: -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+    /* Font stack:
+       - Noto Sans CJK KR: Korean text (installed via fonts-noto-cjk on Linux)
+       - Apple SD Gothic Neo / -apple-system: macOS local rendering
+       - Noto Color Emoji: status icons (✅ 🟠 🔴 ❓ ⚠️ 💡 📚) — without
+         this, weasyprint shows tofu boxes (`⊠`) on Linux containers.
+       - DejaVu Sans / sans-serif: fallback */
+    font-family: -apple-system, "Apple SD Gothic Neo", "Noto Sans CJK KR",
+                 "Noto Sans KR", "Noto Color Emoji", "Apple Color Emoji",
+                 "Segoe UI Emoji", "DejaVu Sans", sans-serif;
     max-width: 920px;
     margin: 2em auto;
     padding: 0 1.2em;
@@ -205,13 +213,35 @@
   }
 
   .orphan-section { margin-top: 2em; }
-  .orphan-section .orphan-item {
+  .orphan-section .orphan-intro {
+    color: #666;
+    font-size: 0.92em;
+    margin-bottom: 0.6em;
+  }
+  .orphan-section ul.orphan-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
     border: 1px solid #e0e0e0;
     border-left: 4px solid #0277bd;
     border-radius: 4px;
-    padding: 0.6em 0.9em;
-    margin: 0.5em 0;
+    overflow: hidden;
+  }
+  .orphan-section ul.orphan-list li {
+    padding: 0.5em 0.9em;
+    border-bottom: 1px solid #eee;
     font-size: 0.92em;
+    word-break: keep-all;
+  }
+  .orphan-section ul.orphan-list li:last-child { border-bottom: none; }
+  .orphan-section ul.orphan-list li .quote {
+    color: #444;
+  }
+  .orphan-section .orphan-suggestion {
+    margin-top: 0.5em;
+    color: #555;
+    font-size: 0.9em;
+    font-style: italic;
   }
 
   @media print {
@@ -437,13 +467,22 @@
   {% endfor %}
   {% if orphan_findings %}
     <div class="orphan-section">
-      <h2>본문 인용이 참고문헌과 매칭되지 않음</h2>
-      {% for f in orphan_findings %}
-        <div class="orphan-item">
-          <b>{{ f.error_type }}</b> · {{ f.explanation }}
-          {% if f.suggestion %}<div style="margin-top:0.3em">💡 {{ f.suggestion }}</div>{% endif %}
-        </div>
-      {% endfor %}
+      <h2>본문 인용이 참고문헌과 매칭되지 않음 ({{ orphan_findings|length }}건)</h2>
+      <p class="orphan-intro">
+        아래 인용들은 본문에서 사용되었지만 참고문헌 목록에 해당 항목이
+        없습니다. 참고문헌을 추가하거나 인용을 수정하세요.
+      </p>
+      <ul class="orphan-list">
+        {% for f in orphan_findings %}
+          <li>
+            {% if f.draft_claim_quote %}
+              <span class="quote">"{{ f.draft_claim_quote[:240] }}{% if f.draft_claim_quote|length > 240 %}…{% endif %}"</span>
+            {% else %}
+              <i style="color:#888">(인용 문장 정보 없음)</i>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
     </div>
   {% endif %}
 </body>
