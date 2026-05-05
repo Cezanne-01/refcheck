@@ -2,7 +2,10 @@
 name = "refcheck"
 version = "0.1.0"
 description = "LLM 학술 초안 참고문헌 검증 도구"
-requires-python = ">=3.11"
+# Upper bound is required so Poetry's resolver can pin dev deps that
+# themselves cap Python (reportlab requires <4). Without `<4` the
+# resolver assumes hypothetical Python 4+ and fails.
+requires-python = ">=3.11,<4"
 dependencies = [
     "pydantic>=2.6",
     "openai>=1.30",
