@@ -109,6 +109,7 @@ async def run_pipeline(
         model=models["content"],
         max_turns=config.agent_max_turns,
         concurrency=min(3, config.concurrency),
+        llm_client=llm,
     )
     reporter.finish(Stage.VERIFY_METADATA)
 
@@ -129,6 +130,7 @@ async def run_pipeline(
         model=models["content"],
         max_turns=config.agent_max_turns,
         concurrency=min(3, config.concurrency),
+        llm_client=llm,
     )
     reporter.finish(Stage.VERIFY_CONTENT, message=f"{len(findings)}개 발견사항")
 
@@ -138,6 +140,9 @@ async def run_pipeline(
         draft_title=draft_title,
         processing_seconds=elapsed,
         total_usd_cost=llm.total_cost_usd,
+        total_prompt_tokens=llm.total_prompt_tokens,
+        total_completion_tokens=llm.total_completion_tokens,
+        model_breakdown=llm.model_breakdown,
         verification_level=config.verification_level,
     )
     report = build_draft_report(

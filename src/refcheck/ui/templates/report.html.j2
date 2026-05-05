@@ -300,6 +300,35 @@
     {% if status_count.unverifiable %}<span class="seg" style="color:#6a1b9a">❓ 확인 불가 {{ status_count.unverifiable }}</span>{% endif %}
   </p>
 
+  {# ---------- LLM usage breakdown ---------- #}
+  {% if report.metadata.total_prompt_tokens or report.metadata.model_breakdown %}
+    <h2>🤖 LLM 사용량</h2>
+    <p class="meta-row" style="margin-bottom:0.5em">
+      <span><b>총 토큰:</b> 입력 {{ "{:,}".format(report.metadata.total_prompt_tokens) }} + 출력 {{ "{:,}".format(report.metadata.total_completion_tokens) }} = {{ "{:,}".format(report.metadata.total_prompt_tokens + report.metadata.total_completion_tokens) }}</span>
+      <span><b>비용:</b> ${{ "%.4f"|format(report.metadata.total_usd_cost) }}</span>
+    </p>
+    {% if report.metadata.model_breakdown %}
+      <table class="diff-table" style="font-size:0.88em">
+        <tr style="background:#f5f5f5">
+          <th style="text-align:left; padding:0.45em 0.6em">모델</th>
+          <th style="text-align:right; padding:0.45em 0.6em">호출</th>
+          <th style="text-align:right; padding:0.45em 0.6em">입력 토큰</th>
+          <th style="text-align:right; padding:0.45em 0.6em">출력 토큰</th>
+          <th style="text-align:right; padding:0.45em 0.6em">비용 (USD)</th>
+        </tr>
+        {% for model_name, slot in report.metadata.model_breakdown.items() %}
+          <tr>
+            <td style="padding:0.5em 0.6em">{{ model_name }}</td>
+            <td style="padding:0.5em 0.6em; text-align:right">{{ slot.calls|int }}</td>
+            <td style="padding:0.5em 0.6em; text-align:right">{{ "{:,}".format(slot.prompt_tokens|int) }}</td>
+            <td style="padding:0.5em 0.6em; text-align:right">{{ "{:,}".format(slot.completion_tokens|int) }}</td>
+            <td style="padding:0.5em 0.6em; text-align:right">${{ "%.4f"|format(slot.cost_usd) }}</td>
+          </tr>
+        {% endfor %}
+      </table>
+    {% endif %}
+  {% endif %}
+
   {# ---------- Reference cards ---------- #}
   <h2>참고문헌별 검증 결과</h2>
 

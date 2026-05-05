@@ -41,8 +41,12 @@ async def verify_citation_agent(
     full_text_fetcher: FullTextFetcher | None = None,
     model: str = "gpt-5.4",
     max_turns: int = 5,
+    llm_client: Any | None = None,
 ) -> Finding | None:
-    """Run the content-verification agent for a single citation."""
+    """Run the content-verification agent for a single citation.
+
+    If ``llm_client`` is provided, agent token usage is recorded there.
+    """
     if verified_ref.status in ("hallucination", "unverifiable"):
         return None
 
@@ -77,6 +81,12 @@ async def verify_citation_agent(
             tools=CONTENT_TOOLS,
             dispatcher=dispatcher,
         )
+        if llm_client is not None:
+            llm_client.record_external_usage(
+                model=model,
+                prompt_tokens=result.total_prompt_tokens,
+                completion_tokens=result.total_completion_tokens,
+            )
     except AgentTimeoutError:
         return Finding(
             id=f"find_{citation.id}",
@@ -122,6 +132,7 @@ async def verify_all_content_agent(
     model: str = "gpt-5.4",
     max_turns: int = 5,
     concurrency: int = 3,
+    llm_client: Any | None = None,
 ) -> list[Finding]:
     vref_by_id = {v.reference.id: v for v in verified_refs}
     sem = asyncio.Semaphore(concurrency)
@@ -136,6 +147,7 @@ async def verify_all_content_agent(
                 openai_client=openai_client,
                 full_text_fetcher=full_text_fetcher,
                 model=model, max_turns=max_turns,
+                llm_client=llm_client,
             )
 
     tasks = []

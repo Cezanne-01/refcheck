@@ -10,6 +10,14 @@ def _llm_two_extract_steps():
     because the agent path stubs content verification entirely)."""
     mock_llm = MagicMock(spec=LLMClient)
     mock_llm.total_cost_usd = 0.01
+    mock_llm.total_prompt_tokens = 200
+    mock_llm.total_completion_tokens = 100
+    mock_llm.model_breakdown = {
+        "gpt-5.4-mini": {
+            "prompt_tokens": 200, "completion_tokens": 100,
+            "cost_usd": 0.002, "calls": 2,
+        },
+    }
     mock_llm._client = MagicMock()
     mock_llm.complete_json = AsyncMock(side_effect=[
         ({"references": [{

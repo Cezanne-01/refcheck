@@ -63,6 +63,14 @@ async def test_agent_mode_detects_hallucination_and_mismatch(tmp_path):
 
     mock_llm = MagicMock(spec=LLMClient)
     mock_llm.total_cost_usd = 0.25
+    mock_llm.total_prompt_tokens = 1000
+    mock_llm.total_completion_tokens = 500
+    mock_llm.model_breakdown = {
+        "gpt-5.4": {
+            "prompt_tokens": 1000, "completion_tokens": 500,
+            "cost_usd": 0.25, "calls": 5,
+        },
+    }
     mock_llm._client = MagicMock()
     mock_llm.complete_json = AsyncMock(side_effect=[
         # parse_references

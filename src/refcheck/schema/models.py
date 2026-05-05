@@ -76,6 +76,10 @@ class ReportMetadata(BaseModel):
     processing_seconds: float
     total_usd_cost: float
     verification_level: Literal["fast", "precise", "ultra"]
+    total_prompt_tokens: int = 0
+    total_completion_tokens: int = 0
+    # Per-model breakdown: {model_name: {prompt_tokens, completion_tokens, cost_usd, calls}}
+    model_breakdown: dict[str, dict[str, float]] = Field(default_factory=dict)
 
 
 class DraftReport(BaseModel):

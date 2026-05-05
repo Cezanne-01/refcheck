@@ -87,6 +87,48 @@ class LLMClient:
         self.total_usage.append(usage)
         return parsed, usage
 
+    def record_external_usage(
+        self, *, model: str, prompt_tokens: int, completion_tokens: int,
+    ) -> None:
+        """Record token usage from a call that didn't go through complete_json.
+
+        Used by the function-calling agent loop (verify/agent_metadata.py and
+        verify/agent_content.py) which calls the OpenAI client directly via
+        AgentRunner. Without this, agent calls — the most expensive part of
+        the pipeline — would be invisible to the cost tracker.
+        """
+        self.total_usage.append(LLMUsage(
+            model=model,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            cost_usd=_cost(model, prompt_tokens, completion_tokens),
+        ))
+
     @property
     def total_cost_usd(self) -> float:
         return sum(u.cost_usd for u in self.total_usage)
+
+    @property
+    def total_prompt_tokens(self) -> int:
+        return sum(u.prompt_tokens for u in self.total_usage)
+
+    @property
+    def total_completion_tokens(self) -> int:
+        return sum(u.completion_tokens for u in self.total_usage)
+
+    @property
+    def model_breakdown(self) -> dict[str, dict[str, int | float]]:
+        """Per-model breakdown: {model: {prompt_tokens, completion_tokens, cost_usd, calls}}."""
+        out: dict[str, dict[str, int | float]] = {}
+        for u in self.total_usage:
+            slot = out.setdefault(u.model, {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "cost_usd": 0.0,
+                "calls": 0,
+            })
+            slot["prompt_tokens"] += u.prompt_tokens  # type: ignore[operator]
+            slot["completion_tokens"] += u.completion_tokens  # type: ignore[operator]
+            slot["cost_usd"] += u.cost_usd  # type: ignore[operator]
+            slot["calls"] += 1  # type: ignore[operator]
+        return out

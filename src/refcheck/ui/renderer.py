@@ -84,6 +84,28 @@ def _render_summary(report: DraftReport, *, st: Any) -> None:
     if parts:
         st.markdown(" · ".join(parts), unsafe_allow_html=True)
 
+    # LLM usage breakdown
+    md = report.metadata
+    if md.total_prompt_tokens or md.total_completion_tokens or md.model_breakdown:
+        with st.expander("🤖 LLM 사용량 / 비용 상세"):
+            total_in = md.total_prompt_tokens
+            total_out = md.total_completion_tokens
+            st.markdown(
+                f"**총 토큰**: 입력 `{total_in:,}` + 출력 `{total_out:,}` "
+                f"= `{total_in + total_out:,}` · **비용** `${md.total_usd_cost:.4f}`"
+            )
+            if md.model_breakdown:
+                rows = []
+                for model_name, slot in md.model_breakdown.items():
+                    rows.append({
+                        "모델": model_name,
+                        "호출": int(slot.get("calls", 0)),
+                        "입력 토큰": int(slot.get("prompt_tokens", 0)),
+                        "출력 토큰": int(slot.get("completion_tokens", 0)),
+                        "비용 (USD)": round(float(slot.get("cost_usd", 0.0)), 4),
+                    })
+                st.dataframe(rows, use_container_width=True, hide_index=True)
+
 
 # ---------------------------------------------------------------------------
 # Per-reference card

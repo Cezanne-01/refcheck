@@ -64,8 +64,14 @@ async def verify_reference_agent(
     web_search: WebSearchClient | None = None,
     model: str = "gpt-5.4",
     max_turns: int = 6,
+    llm_client: Any | None = None,
 ) -> VerifiedReference:
-    """Run the metadata-verification agent for a single Reference."""
+    """Run the metadata-verification agent for a single Reference.
+
+    If ``llm_client`` (an ``LLMClient`` instance) is provided, the agent
+    records its token usage there so the total cost reflects agent calls
+    too — without this, only the upfront extraction phase is counted.
+    """
     dispatcher = MetadataToolDispatcher(
         crossref=crossref, openalex=openalex,
         semantic_scholar=semantic_scholar, pubmed=pubmed,
@@ -82,6 +88,12 @@ async def verify_reference_agent(
             tools=METADATA_TOOLS,
             dispatcher=dispatcher,
         )
+        if llm_client is not None:
+            llm_client.record_external_usage(
+                model=model,
+                prompt_tokens=result.total_prompt_tokens,
+                completion_tokens=result.total_completion_tokens,
+            )
     except AgentTimeoutError:
         return VerifiedReference(
             reference=ref,
@@ -173,6 +185,7 @@ async def verify_all_references_agent(
     model: str = "gpt-5.4",
     max_turns: int = 6,
     concurrency: int = 3,
+    llm_client: Any | None = None,
 ) -> list[VerifiedReference]:
     sem = asyncio.Semaphore(concurrency)
 
@@ -184,6 +197,7 @@ async def verify_all_references_agent(
                 semantic_scholar=semantic_scholar, pubmed=pubmed,
                 web_search=web_search,
                 model=model, max_turns=max_turns,
+                llm_client=llm_client,
             )
 
     return list(await asyncio.gather(*(_worker(r) for r in references)))
