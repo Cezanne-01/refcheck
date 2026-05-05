@@ -49,48 +49,10 @@ def _hydrate_env_from_streamlit_secrets() -> None:
 _hydrate_env_from_streamlit_secrets()
 
 
-def _render_pdf_diagnostic_sidebar() -> None:
-    """Sidebar diagnostic: confirm PDF generation pipeline (weasyprint +
-    its system libs) is fully installed in the deploy environment."""
-    with st.sidebar:
-        st.subheader("⚙️ 시스템 진단")
-        try:
-            from refcheck.report.pdf_exporter import export_pdf
-            from refcheck.schema.models import (
-                DraftReport, ReportMetadata,
-            )
-            tiny = DraftReport(
-                metadata=ReportMetadata(
-                    draft_title="diagnostic",
-                    processing_seconds=0.0,
-                    total_usd_cost=0.0,
-                    verification_level="fast",
-                ),
-                summary_counts={},
-                findings=[],
-                references=[],
-                unverified_manual_review=[],
-            )
-            pdf_bytes = export_pdf(tiny)
-            if pdf_bytes.startswith(b"%PDF-"):
-                st.success(
-                    f"✅ PDF 생성 가능 ({len(pdf_bytes):,} bytes 더미 PDF 생성 성공)"
-                )
-            else:
-                st.error("PDF 출력은 됐는데 헤더가 이상함")
-        except Exception as e:
-            st.error(
-                "❌ PDF 생성 실패 — weasyprint 또는 시스템 라이브러리 누락\n\n"
-                f"```\n{type(e).__name__}: {e}\n```"
-            )
-
-
 def main() -> None:
     st.set_page_config(page_title="refcheck", layout="wide", page_icon="📚")
     st.title("📚 refcheck — 참고문헌 검증")
     st.caption("LLM이 작성한 학술 문서 초안의 참고문헌·인용을 검증합니다.")
-
-    _render_pdf_diagnostic_sidebar()
 
     # Session state
     if "report" not in st.session_state:
